@@ -2,7 +2,7 @@
 
 This repository contains the official implementation of **METEORA**, a rationale-driven chunk selection framework that replaces re-ranking in Retrieval-Augmented Generation (RAG) with a transparent, robust, and explanation-based approach. METEORA is designed for high-stakes domains such as law, finance, and scientific research, where factual precision and adversarial robustness are critical.
 
-📄 **Paper**: _Under submission to NeurIPS 2025_  
+📄 **Paper**: _Under review in NeurIPS 2025_  
 🧠 **Authors**: Anonymous et.al.
 
 ---
@@ -121,7 +121,7 @@ python evaluate_generation.py --dataset privacyqa
   author    = {},
   journal   = {NeurIPS},
   year      = {2025},
-  note      = {Under Submission}
+  note      = {Under Review}
 }
 ```
 

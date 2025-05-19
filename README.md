@@ -49,16 +49,13 @@ This repository contains the official implementation of **METEORA**, a rationale
 
 ## 📂 Directory Overview
 
-```
-├── data/                  # Input datasets (CUAD, MAUD, etc.)
-├── models/                # LLM checkpoints for generator, verifier
-├── src/
-│   ├── rationale_generator/
-│   ├── ecse_selector/
-│   ├── verifier/
-│   └── utils/
-├── experiments/           # Evaluation pipelines
-├── results/               # Output logs and visualizations
+```                
+├── Experiments/
+│   ├── Ablation/
+│   ├── Adversarial/
+│   ├── CP Task/
+│   └── Generation/
+├── Images/               
 ├── requirements.txt
 └── README.md
 ```

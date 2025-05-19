@@ -106,7 +106,7 @@ python evaluate_generation.py --dataset privacyqa
 ## 📈 Visual Example
 
 <p align="center">
-  <img src="images/Generation.png" width="500px"/>
+  <img src="Images/Generations.png" width="500px"/>
   <br>
   <em>METEORA improves answer accuracy while using ~50% fewer chunks than baseline RAG methods.</em>
 </p>

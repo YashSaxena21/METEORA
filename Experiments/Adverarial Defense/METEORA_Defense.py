@@ -99,8 +99,6 @@ def generate_rationales(model, tokenizer, query):
     - Use XML-style tags: <rationale_1>, <rationale_2>, etc.
     - Include a brief descriptive label in square brackets
     - Provide a precise, strategic search approach
-    - Generate 8-10 distinct rationales
-    - Avoid redundancy between rationales
 
     Example 1:
     Query: Consider the Promotion Agreement between MiddleBrook Pharmaceuticals, Inc. and DoctorDirectory.com, Inc. for MOXATAG; Is there an anti-assignment clause in this contract?
@@ -1104,10 +1102,8 @@ def main():
     
     print(f"Number of available GPUs: {torch.cuda.device_count()}")
     
-    # Load Saul model on GPU 0
-    print("Loading Saul-7B model on GPU 0...")
     torch.cuda.set_device(0)  # Set current device to GPU 0
-    llm_model_name = "Equall/Saul-7B-Instruct-v1"
+    llm_model_name = "meta-llama/Llama-3.1-8B-Instruct"
     llm_model = AutoModelForCausalLM.from_pretrained(llm_model_name).to("cuda:0")
     llm_tokenizer = AutoTokenizer.from_pretrained(llm_model_name)
     

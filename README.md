@@ -2,8 +2,18 @@
 
 This repository contains the official implementation of **METEORA**, a rationale-driven chunk selection framework that replaces re-ranking in Retrieval-Augmented Generation (RAG) with a transparent, robust, and explanation-based approach. METEORA is designed for high-stakes domains such as law, finance, and scientific research, where factual precision and adversarial robustness are critical.
 
-📄 **Paper**: _Under review in NeurIPS 2025_  
+📄 **Paper**: _Under review in ICLR 2026_  
 🧠 **Authors**: Anonymous et.al.
+
+---
+
+## Precision-Recall Curves (P-R Curves) for k = 1 to 64
+
+<p align="center">
+  <img src="Images/k_sweep.png" width="500px"/>
+  <br>
+  <em>METEORA improves answer accuracy while using ~80% fewer chunks than baseline RAG methods.</em>
+</p>
 
 ---
 
@@ -100,24 +110,14 @@ python evaluate_generation.py --dataset privacyqa
 
 ---
 
-## 📈 Visual Example
-
-<p align="center">
-  <img src="Images/Generations.png" width="500px"/>
-  <br>
-  <em>METEORA improves answer accuracy while using ~50% fewer chunks than baseline RAG methods.</em>
-</p>
-
----
-
 ## 📜 Citation
 
 ```bibtex
 @inprogress{meteora2025,
   title     = {METEORA: Method for Interpretable Rank-Free Evidence Selection with Optimal Rationale},
   author    = {},
-  journal   = {NeurIPS},
-  year      = {2025},
+  journal   = {ICLR},
+  year      = {2026},
   note      = {Under Review}
 }
 ```

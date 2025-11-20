@@ -10,7 +10,7 @@ This repository contains the official implementation of **METEORA**, a rationale
 ## Precision-Recall Curves (P-R Curves) for k = 1 to 64
 
 <p align="center">
-  <img src="Images/k_sweep.png" width="500px"/>
+  <img src="Images/k_sweep.png" width="1000px"/>
   <br>
   <em>METEORA improves answer accuracy while using ~80% fewer chunks than baseline RAG methods.</em>
 </p>

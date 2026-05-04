@@ -16,15 +16,21 @@ The package code lives in `src/meteora`. The original paper experiments live in
 Copy and paste this into one Colab code cell:
 
 ```python
+!rm -rf /content/METEORA
 !git clone https://github.com/YashSaxena21/METEORA.git /content/METEORA
 %cd /content/METEORA
-!python -m pip install -q -e .
+%pip install -q -e /content/METEORA
+
+from meteora import HashingEncoder, MeteoraReranker
+print("METEORA import works")
+
 !python examples/reranker_replacement.py
 ```
 
 Expected output:
 
 ```text
+METEORA import works
 Selected document ids: ['a', 'c']
 ```
 
@@ -33,13 +39,20 @@ If you already cloned the repo in the same Colab runtime, use this instead:
 ```python
 %cd /content/METEORA
 !git pull
-!python -m pip install -q -e .
+%pip install -q -e /content/METEORA
+
+from meteora import HashingEncoder, MeteoraReranker
+print("METEORA import works")
+
 !python examples/reranker_replacement.py
 ```
 
 Do not create a virtual environment in Colab. Colab already runs inside a
 managed Python environment, and `%cd /content/METEORA` is needed so pip installs
 from the repository folder that contains `pyproject.toml`.
+
+If `from meteora import ...` still fails, restart the Colab runtime and run the
+single Colab cell again.
 
 ### Local Terminal
 

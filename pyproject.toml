@@ -1,0 +1,66 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "meteora-rag"
+version = "0.1.0"
+description = "Rank-free, rationale-driven evidence selection for retrieval-augmented generation."
+readme = "README.md"
+requires-python = ">=3.9"
+authors = [
+  {name = "Yash Saxena"}
+]
+keywords = ["rag", "retrieval", "evidence-selection", "llm", "ranking-free"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: Developers",
+  "Intended Audience :: Science/Research",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3 :: Only",
+  "Programming Language :: Python :: 3.9",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+dependencies = [
+  "numpy>=1.24",
+]
+
+[project.optional-dependencies]
+sentence-transformers = [
+  "sentence-transformers>=2.7",
+]
+hf = [
+  "accelerate>=0.30",
+  "torch>=2.2",
+  "transformers>=4.40",
+]
+training = [
+  "datasets>=2.19",
+  "peft>=0.10",
+  "trl>=0.9",
+]
+dev = [
+  "build>=1.2",
+  "pytest>=8.0",
+  "ruff>=0.5",
+]
+
+[project.urls]
+Repository = "https://github.com/YashSaxena21/METEORA"
+
+[project.scripts]
+meteora = "meteora.cli:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py39"

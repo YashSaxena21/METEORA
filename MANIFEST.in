@@ -1,0 +1,7 @@
+include README.md
+include requirements.txt
+include requirements-experiments.txt
+recursive-include examples *.py
+recursive-include tests *.py
+recursive-include Images *.png
+recursive-include Experiments *.py

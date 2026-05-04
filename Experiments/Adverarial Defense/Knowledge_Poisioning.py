@@ -177,11 +177,15 @@ def process_documents_in_parallel(tasks, max_workers=8):
     """Process document modifications in parallel."""
     results = []
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        futures = {executor.submit(modify_document_with_poison, *task): task for task in tasks}
+        futures = {
+            executor.submit(modify_document_with_poison, *task): task_index
+            for task_index, task in enumerate(tasks)
+        }
         for future in tqdm(as_completed(futures), total=len(tasks), desc="Modifying documents"):
+            task_index = futures[future]
             result = future.result()
             if result:
-                results.append(result)
+                results.append((task_index, result))
     return results
 
 def create_poisoned_dataset(original_dataset, poisoned_outputs, indices_to_poison, poison_ratio, output_dir):
@@ -236,11 +240,11 @@ def create_poisoned_dataset(original_dataset, poisoned_outputs, indices_to_poiso
     
     # Update dataset with poisoned snippets
     poisoning_metadata = []
-    for i, result in enumerate(modification_results):
-        if i not in test_snippet_map:
+    for task_index, result in modification_results:
+        if task_index not in test_snippet_map:
             continue
             
-        idx, test, snippet, poisoning = test_snippet_map[i]
+        idx, test, snippet, poisoning = test_snippet_map[task_index]
         
         # Update snippet in the dataset
         poisoned_snippet = snippet.copy()

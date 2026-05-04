@@ -1,126 +1,248 @@
-# METEORA: Method for Interpretable Rank-Free Evidence Selection with Optimal Rationale
+# METEORA
 
-This repository contains the official implementation of **METEORA**, a rationale-driven chunk selection framework that replaces re-ranking in Retrieval-Augmented Generation (RAG) with a transparent, robust, and explanation-based approach. METEORA is designed for high-stakes domains such as law, finance, and scientific research, where factual precision and adversarial robustness are critical.
+METEORA is a drop-in reranker replacement for RAG pipelines.
 
-📄 **Paper**: _Under review in ICLR 2026_  
-🧠 **Authors**: Anonymous et.al.
+Instead of asking a reranker for a fixed top-k, METEORA asks an LLM to generate
+search rationales, then uses those rationales to select evidence with a
+rank-free selector.
 
----
+The package code lives in `src/meteora`. The original paper experiments live in
+`Experiments/`.
 
-## Precision-Recall Curves (P-R Curves) for k = 1 to 64
-
-<p align="center">
-  <img src="Images/k_sweep.png" width="1000px"/>
-  <br>
-  <em>METEORA improves answer accuracy while using ~80% fewer chunks than baseline RAG methods.</em>
-</p>
-
----
-
-## 🚀 Highlights
-
-- **Top-k Free Selection**: No heuristic tuning required. Selection is adaptive and interpretable.
-- **Query-Aligned Rationales**: Generated using Direct Preference Optimization (DPO).
-- **Unsupervised Evidence Selector (ECSE)**: Combines rationale pairing, semantic pooling, and context expansion.
-- **Verifier LLM**: Filters adversarial or poisoned chunks using rationale-derived instructions.
-- **Explainable Pipeline**: Every selected chunk is justified and traceable end-to-end.
-- **Adversarial Resilience**: 3.4 times improvement in F1 score over SoTA perplexity-based defenses.
-
----
-
-## 📊 Key Results
-
-| Task                  | Metric      | RankRAG | METEORA |
-|-----------------------|-------------|---------|---------|
-| Chunk Prioritization  | Precision   | 0.13    | **0.19** (+46%) |
-|                       | Recall      | 0.68    | **0.93** (+37%) |
-| Generation Accuracy   | Accuracy    | 54.3%   | **72.8%** (+34%) |
-| Adversarial Detection | F1 Score    | 0.10    | **0.44** (3.4x) |
-
----
-
-## 🧩 Components
-
-### 1. Rationale Generator
-- Trained using DPO
-- Generates rationales aligned to query-context pairs
-- Preference dataset created automatically from QA data
-
-### 2. ECSE: Evidence Chunk Selection Engine
-- **Pairing**: Matches rationales to best-fitting chunks
-- **Pooling**: Uses elbow detection on pooled rationale embedding
-- **Expansion**: Includes nearby context windows
-
-### 3. Verifier LLM
-- Uses rationale-derived instructions to flag contradictions, factual errors, or instruction violations
-- Boosts resilience to corpus poisoning
-
----
-
-## 📂 Directory Overview
-
-```                
-├── Experiments/
-│   ├── Ablation/
-│   ├── Adversarial/
-│   ├── CP Task/
-│   └── Generation/
-├── Images/               
-├── requirements.txt
-└── README.md
-```
-
----
-
-## ⚙️ Getting Started
-
-### 1. Installation
+## Install
 
 ```bash
-git clone https://github.com/<your-username>/meteora.git
-cd meteora
-pip install -r requirements.txt
+pip install -e .
 ```
 
-### 2. Run Experiments
+For real embedding models:
 
 ```bash
-# Train Rationale Generator
-python train_dpo.py --config configs/dpo_config.json
-
-# Run ECSE selection
-python run_selector.py --dataset contractnli
-
-# Evaluate generation task
-python evaluate_generation.py --dataset privacyqa
+pip install -e ".[sentence-transformers]"
 ```
 
----
+For DPO fine-tuning:
 
-## 📚 Datasets
+```bash
+pip install -e ".[hf,training]"
+```
 
-| Domain     | Dataset        | Description |
-|------------|----------------|-------------|
-| Legal      | ContractNLI    | Entailment classification with clause evidence |
-| Legal      | PrivacyQA      | QA from real privacy policies |
-| Legal      | CUAD           | Clause extraction from commercial contracts |
-| Legal      | MAUD           | QA over merger agreements |
-| Finance    | FinQA          | Financial document QA |
-| Academic   | QASPER         | Scientific paper QA |
+## Quick Start
 
----
+Every rationale prompt requires sample shots. Pass examples from your domain so
+the model learns the style of rationales you want.
 
-## 📜 Citation
+```python
+from meteora import (
+    HFRationaleGenerator,
+    MeteoraReranker,
+    SentenceTransformerEncoder,
+)
+
+sample_shots = [
+    {
+        "query": "Is there an anti-assignment clause?",
+        "response": """
+<rationale_1>[Assignment language] Search for assign, transfer, successors, assigns, and consent restrictions.</rationale_1>
+<rationale_2>[Consent trigger] Look for clauses requiring prior written consent before assignment.</rationale_2>
+""",
+    }
+]
+
+# Choose either a normal model id or a fine-tuned model directory.
+rationale_model = "meta-llama/Llama-3.1-8B-Instruct"
+# rationale_model = "models/meteora-rationale-dpo"
+
+rationale_generator = HFRationaleGenerator(
+    rationale_model,
+    sample_shots=sample_shots,
+    domain="commercial contracts",
+    torch_dtype="float16",
+)
+
+reranker = MeteoraReranker(
+    SentenceTransformerEncoder("sentence-transformers/all-MiniLM-L6-v2"),
+    rationale_generator=rationale_generator,
+)
+
+clean_documents = reranker.filter(
+    query="Is assignment restricted?",
+    documents=[
+        "The agreement may not be assigned without prior written consent.",
+        "Invoices are due within thirty days.",
+        "This agreement binds successors and permitted assigns.",
+    ],
+)
+```
+
+That is the main intended use: replace your existing reranker with
+`MeteoraReranker`.
+
+To run your dataset with the normal model, set `rationale_model` to a Hugging
+Face model id. To run with your fine-tuned model, set it to the DPO
+`--output-dir` path, for example `models/meteora-rationale-dpo`.
+
+## Inputs
+
+`MeteoraReranker` accepts:
+
+- plain strings
+- dictionaries with `text`, `content`, or `page_content`
+- `Chunk` objects
+- LangChain-style documents with `page_content`
+
+Use `rerank(...)` when you want scores and diagnostics:
+
+```python
+results = reranker.rerank(query, candidate_documents)
+for result in results:
+    print(result.rank, result.score, result.document)
+```
+
+Use `filter(...)` when your RAG pipeline expects documents back:
+
+```python
+documents = reranker.filter(query, candidate_documents)
+```
+
+## Sample Shots
+
+Sample shots are required for prompt construction.
+
+They can be structured:
+
+```python
+sample_shots = [
+    {
+        "query": "What licenses are granted?",
+        "response": "<rationale_1>[License scope] Search for grant, license, use, sublicense, and restrictions.</rationale_1>",
+    }
+]
+```
+
+Or preformatted strings:
+
+```python
+sample_shots = [
+    """Query: What happens after a change of control?
+Rationales:
+<rationale_1>[Control trigger] Search for change of control, merger, acquisition, and termination rights.</rationale_1>"""
+]
+```
+
+## Optional Verifier
+
+You can attach a verifier model to reject irrelevant, contradictory, or poisoned
+evidence.
+
+```python
+from meteora import MeteoraReranker
+
+def verifier_model(prompt: str) -> str:
+    return '{"relevant": true, "flagged": false, "reason": "The chunk supports the query."}'
+
+verified_reranker = MeteoraReranker(
+    encoder,
+    rationale_generator=rationale_generator,
+    verifier=verifier_model,
+)
+
+clean_documents = verified_reranker.filter(query, candidate_documents)
+```
+
+## DPO Fine-Tuning
+
+METEORA includes a DPO path for fine-tuning the rationale generator.
+
+Create a `sample_shots.json` file:
+
+```json
+[
+  {
+    "query": "Is there an anti-assignment clause?",
+    "response": "<rationale_1>[Assignment] Search for assignment, transfer, and consent restrictions.</rationale_1>"
+  }
+]
+```
+
+Prepare preference data:
+
+```bash
+meteora dpo-prepare \
+  --input data/preference_examples.json \
+  --sample-shots sample_shots.json \
+  --output-dir data/dpo \
+  --domain "commercial contracts"
+```
+
+Train:
+
+```bash
+meteora dpo-train \
+  --train data/dpo/train.jsonl \
+  --validation data/dpo/validation.jsonl \
+  --model meta-llama/Llama-3.1-8B-Instruct \
+  --output-dir models/meteora-rationale-dpo \
+  --torch-dtype float16
+```
+
+The fine-tuned model is saved to `--output-dir` with the tokenizer and a
+`meteora_dpo_config.json` metadata file. Use that same directory as
+`rationale_model` when running METEORA on your dataset:
+
+```python
+normal_model = "meta-llama/Llama-3.1-8B-Instruct"
+fine_tuned_model = "models/meteora-rationale-dpo"
+
+rationale_generator = HFRationaleGenerator(
+    fine_tuned_model,  # change to normal_model if you do not want the tuned model
+    sample_shots=sample_shots,
+    domain="commercial contracts",
+    torch_dtype="float16",
+)
+```
+
+The DPO defaults match the paper setup: 80/10/10 split, 3 epochs, learning rate
+`3e-5`, cosine scheduler, beta `0.05`, batch size `1`, and gradient
+accumulation `2`. Training saves the final fine-tuned checkpoint by default;
+set `load_best_model_at_end=True` in `DPOTrainingConfig` if you want to reload
+the lowest validation-loss checkpoint before saving.
+
+## CLI Selection
+
+Chunk a document:
+
+```bash
+meteora chunk document.txt --chunk-size 256 --output chunks.json
+```
+
+Select evidence from saved chunks and rationales:
+
+```bash
+meteora select \
+  --chunks chunks.json \
+  --rationales rationales.txt \
+  --encoder-model sentence-transformers/all-MiniLM-L6-v2 \
+  --output selection.json
+```
+
+## Development
+
+```bash
+pip install -e ".[dev]"
+python -m unittest discover -s tests
+python -m build
+```
+
+## Citation
 
 ```bibtex
-@inprogress{meteora2025,
-  title     = {METEORA: Method for Interpretable Rank-Free Evidence Selection with Optimal Rationale},
-  author    = {},
-  journal   = {ICLR},
-  year      = {2026},
-  note      = {Under Review}
+@inproceedings{
+anonymous2026ranking,
+title={Ranking Free {RAG}: Replacing Re-ranking with Selection in {RAG} for Sensitive Domains},
+author={Anonymous},
+booktitle={Forty-third International Conference on Machine Learning},
+year={2026},
+url={https://openreview.net/forum?id=O88FCPAPAj}
 }
 ```
-
----
-

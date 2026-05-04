@@ -55,16 +55,12 @@ def direct_chunk_selection(model, tokenizer, query: str, chunks: List[Dict],
                           top_k_chunks: Optional[int] = None) -> str:
     """
     Generate a response from Llama model to directly identify the correct chunks.
-    Optionally limit to top-k chunks.
+    If top_k_chunks is provided, ask the model to select exactly that many chunks.
     """
     # Create a structured representation of chunks within context limit
     chunk_info = []
     current_length = 0
-    
-    # If top_k_chunks is specified, select only top chunks
-    if top_k_chunks is not None:
-        chunks = chunks[:top_k_chunks]
-    
+
     for i, chunk in enumerate(chunks):
         chunk_text = f"Chunk {i}: {chunk['text']}\n\n"
         chunk_length = len(chunk_text)

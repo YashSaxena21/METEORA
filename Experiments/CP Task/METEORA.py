@@ -3,10 +3,11 @@ import os
 import json
 import torch
 import traceback
-from transformers import AutoTokenizer, AutoModelForCausalLM, TrainerCallback
+from transformers import AutoTokenizer, AutoModelForCausalLM
 from sentence_transformers import SentenceTransformer, util
 from datasets import Dataset
 from trl import DPOTrainer, DPOConfig
+from meteora.dpo import build_dpo_prompt, format_rationale_completion, get_print_logs_callback
 
 # =======================
 # USER CONFIGURATION
@@ -23,12 +24,18 @@ VAL_SPLIT = 0.1
 TEST_SPLIT = 0.1
 EPOCHS = 3
 MAX_CHUNKS = 5
+DPO_SAMPLE_SHOTS = [
+    {
+        "query": "Is there an anti-assignment clause in this contract?",
+        "response": "<rationale_1>[Assignment restrictions] Search for assignment, transfer, successors, assigns, and prior consent limits.</rationale_1>",
+    }
+]
 
 # =======================
 # DPO DATA PREPARATION
 # =======================
 def prepare_dpo_dataset_from_splits(train_examples, val_examples, tokenizer):
-    train_chosen, train_rejected = [], []
+    train_records = []
     for ex in train_examples:
         if not isinstance(ex.get("effective_rationales"), list) or not isinstance(ex.get("ineffective_rationales"), list):
             continue
@@ -37,11 +44,18 @@ def prepare_dpo_dataset_from_splits(train_examples, val_examples, tokenizer):
         query = ex.get("query", "")
         if not query:
             continue
-        eff = [str(r) for r in ex["effective_rationales"]]
-        ine = [str(r) for r in ex["ineffective_rationales"]]
-        train_chosen.append({"input": f"Query: {query}\n\nProvide effective rationales for retrieving relevant legal information:\n", "chosen": ", ".join(eff), "rejected": ", ".join(ine)})
-        train_rejected.append({"input": f"Query: {query}\n\nProvide effective rationales for retrieving relevant legal information:\n", "chosen": ", ".join(eff), "rejected": ", ".join(ine)})
-    val_chosen, val_rejected = [], []
+        evidence = _oracle_evidence_from_example(ex)
+        train_records.append({
+            "prompt": build_dpo_prompt(
+                query,
+                sample_shots=DPO_SAMPLE_SHOTS,
+                evidence=evidence,
+                domain="legal contracts",
+            ),
+            "chosen": format_rationale_completion(ex["effective_rationales"]),
+            "rejected": format_rationale_completion(ex["ineffective_rationales"]),
+        })
+    val_records = []
     for ex in val_examples:
         if not isinstance(ex.get("effective_rationales"), list) or not isinstance(ex.get("ineffective_rationales"), list):
             continue
@@ -50,28 +64,51 @@ def prepare_dpo_dataset_from_splits(train_examples, val_examples, tokenizer):
         query = ex.get("query", "")
         if not query:
             continue
-        eff = [str(r) for r in ex["effective_rationales"]]
-        ine = [str(r) for r in ex["ineffective_rationales"]]
-        val_chosen.append({"input": f"Query: {query}\n\nProvide effective rationales for retrieving relevant legal information:\n", "chosen": ", ".join(eff), "rejected": ", ".join(ine)})
-        val_rejected.append({"input": f"Query: {query}\n\nProvide effective rationales for retrieving relevant legal information:\n", "chosen": ", ".join(eff), "rejected": ", ".join(ine)})
-    if not val_chosen and len(train_chosen) > 10:
-        val_chosen = train_chosen[-10:]
-        val_rejected = train_rejected[-10:]
-        train_chosen = train_chosen[:-10]
-        train_rejected = train_rejected[:-10]
-    if not train_chosen or not val_chosen:
+        evidence = _oracle_evidence_from_example(ex)
+        val_records.append({
+            "prompt": build_dpo_prompt(
+                query,
+                sample_shots=DPO_SAMPLE_SHOTS,
+                evidence=evidence,
+                domain="legal contracts",
+            ),
+            "chosen": format_rationale_completion(ex["effective_rationales"]),
+            "rejected": format_rationale_completion(ex["ineffective_rationales"]),
+        })
+    if not val_records and len(train_records) > 10:
+        val_records = train_records[-10:]
+        train_records = train_records[:-10]
+    if not train_records or not val_records:
         return None
     train_ds = Dataset.from_dict({
-        "input": [x["input"] for x in train_chosen],
-        "chosen": [x["chosen"] for x in train_chosen],
-        "rejected": [x["rejected"] for x in train_rejected]
+        "prompt": [x["prompt"] for x in train_records],
+        "chosen": [x["chosen"] for x in train_records],
+        "rejected": [x["rejected"] for x in train_records]
     })
     val_ds = Dataset.from_dict({
-        "input": [x["input"] for x in val_chosen],
-        "chosen": [x["chosen"] for x in val_chosen],
-        "rejected": [x["rejected"] for x in val_rejected]
+        "prompt": [x["prompt"] for x in val_records],
+        "chosen": [x["chosen"] for x in val_records],
+        "rejected": [x["rejected"] for x in val_records]
     })
     return {"train": train_ds, "validation": val_ds}
+
+
+def _oracle_evidence_from_example(example):
+    chunks = example.get("document_chunks") or example.get("chunks") or []
+    correct_chunks = example.get("correct_chunks") or example.get("gold_chunks") or []
+    evidence = []
+    for chunk_index in correct_chunks:
+        try:
+            chunk = chunks[int(chunk_index)]
+        except (IndexError, TypeError, ValueError):
+            continue
+        if isinstance(chunk, dict):
+            text = chunk.get("text") or chunk.get("content") or chunk.get("page_content")
+        else:
+            text = str(chunk)
+        if text:
+            evidence.append(str(text))
+    return "\n\n".join(evidence) if evidence else None
 
 # =======================
 # FEW-SHOT PROMPT & RATIONALE GENERATION
@@ -204,6 +241,11 @@ def generate_rationales(model, tokenizer, query, device):
                 continue
                 
             return generated_text
+        except Exception as exc:
+            print(f"Attempt {attempt+1}: rationale generation failed: {exc}")
+            traceback.print_exc()
+
+    return ""
 
 def extract_rationales_with_regex(response):
     """
@@ -212,14 +254,12 @@ def extract_rationales_with_regex(response):
     with bracketed headers or descriptors.
     Returns a list of tuples: (rationale_number, rationale_text)
     """
+    if not response:
+        return []
+
     # Step 1: Get everything after the last 'Query:' block
     last_query_split = re.split(r'\n?Query:.*', response)
-    if len(last_query_split) < 2:
-        print("⚠️ No query found.")
-        return []  # Return empty list if no query is found
-    
-    # Step 2: Extract the last block (after the last query)
-    final_block = last_query_split[-1]
+    final_block = last_query_split[-1] if len(last_query_split) >= 2 else response
 
     # First attempt: Try to extract numbered items with bracketed headers or descriptors
     numbered_points = re.findall(
@@ -292,18 +332,64 @@ def extract_rationales_with_regex(response):
     return []
 
 
+def normalize_rationales_for_retrieval(rationale_output):
+    """
+    Convert generated rationale output into the (rationale_number, rationale_text)
+    pairs expected by improved_retrieval.
+
+    generate_rationales returns raw decoded model text, while improved_retrieval
+    expects parsed rationale tuples. This helper keeps the evaluation path robust
+    while preserving compatibility with callers that already pass parsed tuples.
+    """
+    if rationale_output is None:
+        return []
+
+    if isinstance(rationale_output, str):
+        return extract_rationales_with_regex(rationale_output)
+
+    normalized = []
+    for item in rationale_output:
+        if isinstance(item, dict):
+            text = item.get("text") or item.get("rationale") or item.get("content")
+            if not text:
+                continue
+            num = item.get("index") or item.get("rationale_number") or len(normalized) + 1
+            normalized.append((_safe_rationale_number(num, len(normalized) + 1), str(text).strip()))
+            continue
+
+        if isinstance(item, (tuple, list)) and len(item) >= 2:
+            num, text = item[0], item[1]
+            normalized.append((_safe_rationale_number(num, len(normalized) + 1), str(text).strip()))
+            continue
+
+        text = str(item).strip()
+        if text:
+            normalized.append((len(normalized) + 1, text))
+
+    return sorted(
+        [(num, text) for num, text in normalized if text],
+        key=lambda rationale: rationale[0],
+    )
+
+
+def _safe_rationale_number(value, fallback):
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return fallback
+
+
 # For backward compatibility with existing code
 def improved_retrieval(rationales, chunks, sbert_model, max_chunks=5):
     """
     Hyperparameter-free chunk retrieval strategy with:
-    1. Each rationale selects a distinct chunk (no duplicates)
+    1. Each rationale selects its best matching chunk, allowing convergence
     2. Data-driven pooled embedding with statistical elbow detection
     3. Simple position-based sliding window of size 1
     """
     chunk_votes = {}
     chunk_similarity_scores = {}
     rationale_contributions = {}  # Track which rationales contributed to finding which chunks
-    already_selected = set()  # Track chunks that have been selected by previous rationales
 
     chunk_texts = [chunk["text"] for chunk in chunks]
     chunk_embeddings = sbert_model.encode(chunk_texts, convert_to_tensor=True)
@@ -314,19 +400,13 @@ def improved_retrieval(rationales, chunks, sbert_model, max_chunks=5):
         "sliding_window": set()
     }
 
-    # Rationale-based voting with distinct chunk selection
+    # Rationale-based voting. Multiple rationales may converge on the same chunk.
     for rationale_num, rationale_text in rationales:
         try:
             rationale_embedding = sbert_model.encode(rationale_text, convert_to_tensor=True)
             similarity_scores = util.cos_sim(rationale_embedding, chunk_embeddings)[0]
-            
-            # Create a masked version of similarity scores to ignore already selected chunks
-            masked_scores = similarity_scores.clone()
-            for idx in already_selected:
-                masked_scores[idx] = -1.0  # Set already selected chunks to lowest possible score
-            
-            # Get the most similar chunk that hasn't been selected yet
-            top_index = torch.argmax(masked_scores).item()
+
+            top_index = torch.argmax(similarity_scores).item()
             score = similarity_scores[top_index].item()
             
             if top_index not in chunk_votes:
@@ -337,8 +417,7 @@ def improved_retrieval(rationales, chunks, sbert_model, max_chunks=5):
             chunk_votes[top_index] += 1
             chunk_similarity_scores[top_index] = max(chunk_similarity_scores[top_index], score)
             selection_reasons["rationale_voting"].add(top_index)
-            already_selected.add(top_index)  # Mark this chunk as selected
-            
+
             # Track which rationale contributed to finding this chunk
             rationale_contributions[top_index].append(rationale_num)
 
@@ -450,7 +529,10 @@ def evaluate_model_on_split(model, tokenizer, examples, sbert_model, max_chunks,
     results = []
     for ex in examples:
         query, chunks, correct = ex["query"], ex["document_chunks"], ex["correct_chunks"]
-        rats = generate_rationales(model, tokenizer, query, device)
+        rationale_response = generate_rationales(model, tokenizer, query, device)
+        rats = normalize_rationales_for_retrieval(rationale_response)
+        if not rats:
+            print(f"⚠️ No parsed rationales for query: {query[:120]}")
         ret = improved_retrieval(rats, chunks, sbert_model, max_chunks)
         sel = ret["selected_chunks"]
         m = calculate_precision_recall(sel, correct, chunks)
@@ -460,7 +542,12 @@ def evaluate_model_on_split(model, tokenizer, examples, sbert_model, max_chunks,
         metrics["f1"].append(m["f1"])
         metrics["correct_chunk_found"].append(m["correct_chunk_found"])
         metrics["selected_chunks_count"].append(len(sel))
-        results.append({"test_id": ex.get("test_id"), "metrics": m, "selected_chunks": sel})
+        results.append({
+            "test_id": ex.get("test_id"),
+            "metrics": m,
+            "selected_chunks": sel,
+            "rationales": rats,
+        })
     summary = {k: sum(v)/len(v) if v else 0.0 for k,v in metrics.items()}
     print(f"{split_name} summary: {summary}")
     return {"summary": summary, "individual_results": results}
@@ -492,7 +579,8 @@ def run_pipeline(name, path):
     if not dsets:
         print(f"Skipping {name}, insufficient data.")
         return
-    tokenizer.pad_token = tokenizer.eos_token_id
+    if tokenizer.pad_token is None:
+        tokenizer.pad_token = tokenizer.eos_token
     cfg = DPOConfig(output_dir=f"./dpo_{name}", per_device_train_batch_size=1, per_device_eval_batch_size=1,
                     gradient_accumulation_steps=2, learning_rate=3e-5, lr_scheduler_type="cosine",
                     num_train_epochs=EPOCHS, warmup_ratio=0.1, logging_steps=10, do_eval=True,
@@ -502,8 +590,21 @@ def run_pipeline(name, path):
     trainer = DPOTrainer(model=model, args=cfg, train_dataset=dsets["train"], eval_dataset=dsets["validation"],
                          processing_class=tokenizer, callbacks=[get_print_logs_callback()])
     trainer.train()
-    trainer.save_model(f"./dpo_{name}/final_model")
-    print(f"DPO training completed for {name}")
+    final_model_dir = f"./dpo_{name}/final_model"
+    os.makedirs(final_model_dir, exist_ok=True)
+    trainer.save_model(final_model_dir)
+    tokenizer.save_pretrained(final_model_dir)
+    with open(os.path.join(final_model_dir, "meteora_dpo_config.json"), "w", encoding="utf-8") as f:
+        json.dump(
+            {
+                "model_name_or_path": REFINER_MODEL_NAME,
+                "output_dir": final_model_dir,
+                "load_for_inference": final_model_dir,
+            },
+            f,
+            indent=2,
+        )
+    print(f"DPO training completed for {name}; saved fine-tuned model to {final_model_dir}")
     # --- EVALUATION ON TEST ---
     test_proc = prepare_test_data(test, tokenizer)
     eval_res = evaluate_model_on_split(trainer.model, tokenizer, test_proc, sbert_model, MAX_CHUNKS, "test", device)

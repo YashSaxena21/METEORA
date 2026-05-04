@@ -304,14 +304,13 @@ def extract_flag_instructions_only(response):
 def improved_retrieval(rationales, chunks, sbert_model, max_chunks=5):
     """
     Hyperparameter-free chunk retrieval strategy with:
-    1. Each rationale selects a distinct chunk (no duplicates)
+    1. Each rationale selects its best matching chunk, allowing convergence
     2. Data-driven pooled embedding with statistical elbow detection
     3. Simple position-based sliding window of size 1
     """
     chunk_votes = {}
     chunk_similarity_scores = {}
     rationale_contributions = {}  # Track which rationales contributed to finding which chunks
-    already_selected = set()  # Track chunks that have been selected by previous rationales
 
     chunk_texts = [chunk["text"] for chunk in chunks]
     chunk_embeddings = sbert_model.encode(chunk_texts, convert_to_tensor=True)
@@ -322,19 +321,13 @@ def improved_retrieval(rationales, chunks, sbert_model, max_chunks=5):
         "sliding_window": set()
     }
 
-    # Rationale-based voting with distinct chunk selection
+    # Rationale-based voting. Multiple rationales may converge on the same chunk.
     for rationale_num, rationale_text in rationales:
         try:
             rationale_embedding = sbert_model.encode(rationale_text, convert_to_tensor=True)
             similarity_scores = util.cos_sim(rationale_embedding, chunk_embeddings)[0]
-            
-            # Create a masked version of similarity scores to ignore already selected chunks
-            masked_scores = similarity_scores.clone()
-            for idx in already_selected:
-                masked_scores[idx] = -1.0  # Set already selected chunks to lowest possible score
-            
-            # Get the most similar chunk that hasn't been selected yet
-            top_index = torch.argmax(masked_scores).item()
+
+            top_index = torch.argmax(similarity_scores).item()
             score = similarity_scores[top_index].item()
             
             if top_index not in chunk_votes:
@@ -345,8 +338,7 @@ def improved_retrieval(rationales, chunks, sbert_model, max_chunks=5):
             chunk_votes[top_index] += 1
             chunk_similarity_scores[top_index] = max(chunk_similarity_scores[top_index], score)
             selection_reasons["rationale_voting"].add(top_index)
-            already_selected.add(top_index)  # Mark this chunk as selected
-            
+
             # Track which rationale contributed to finding this chunk
             rationale_contributions[top_index].append(rationale_num)
 

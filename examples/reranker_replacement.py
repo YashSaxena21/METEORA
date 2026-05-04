@@ -20,11 +20,10 @@ reranker = MeteoraReranker(
     rationale_generator=rationale_generator,
 )
 
-results = reranker.rerank(
+selected_documents = reranker.filter(
     "Is assignment restricted?",
     documents,
     order="document",
 )
 
-for result in results:
-    print(result.rank, result.index, round(result.score, 3), result.document["id"])
+print("Selected document ids:", [document["id"] for document in selected_documents])

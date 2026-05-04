@@ -9,25 +9,90 @@ rank-free selector.
 The package code lives in `src/meteora`. The original paper experiments live in
 `Experiments/`.
 
-## Install
+## Get Started
+
+Copy and paste this from a terminal:
 
 ```bash
-pip install -e .
+git clone https://github.com/YashSaxena21/METEORA.git
+cd METEORA
+
+python3 -m venv .venv
+source .venv/bin/activate
+
+python -m pip install --upgrade pip
+python -m pip install -e .
+
+python examples/reranker_replacement.py
 ```
 
-For real embedding models:
+The example should print the METEORA-selected document ids for a tiny contract
+query. This quick path uses the built-in `HashingEncoder`, so it does not
+download any model weights.
+
+For a real embedding model, install the sentence-transformers extra:
 
 ```bash
-pip install -e ".[sentence-transformers]"
+python -m pip install -e ".[sentence-transformers]"
+```
+
+For Hugging Face rationale generation:
+
+```bash
+python -m pip install -e ".[hf]"
 ```
 
 For DPO fine-tuning:
 
 ```bash
-pip install -e ".[hf,training]"
+python -m pip install -e ".[hf,training]"
+```
+
+If you already cloned the repo and activated your environment, the minimal
+install command is:
+
+```bash
+python -m pip install -e .
 ```
 
 ## Quick Start
+
+This is the smallest copy-paste example. It uses a simple local rationale
+function so you can test the METEORA interface before connecting an LLM.
+
+```python
+from meteora import HashingEncoder, MeteoraReranker
+
+documents = [
+    {"text": "The agreement may not be assigned without prior written consent.", "id": "a"},
+    {"text": "Invoices are due within thirty days after receipt.", "id": "b"},
+    {"text": "The agreement binds successors and permitted assigns.", "id": "c"},
+]
+
+def rationale_generator(query, docs):
+    return """
+<rationale_1>[Consent restriction] Search assigned written consent.</rationale_1>
+<rationale_2>[Successors and assigns] Search successors permitted assigns.</rationale_2>
+"""
+
+reranker = MeteoraReranker(
+    HashingEncoder(),
+    rationale_generator=rationale_generator,
+)
+
+selected_documents = reranker.filter(
+    "Is assignment restricted?",
+    documents,
+    order="document",
+)
+
+print([doc["id"] for doc in selected_documents])
+```
+
+That is the main intended use: replace your existing reranker with
+`MeteoraReranker`.
+
+## Using An LLM Rationale Generator
 
 Every rationale prompt requires sample shots. Pass examples from your domain so
 the model learns the style of rationales you want.
@@ -74,9 +139,6 @@ clean_documents = reranker.filter(
     ],
 )
 ```
-
-That is the main intended use: replace your existing reranker with
-`MeteoraReranker`.
 
 To run your dataset with the normal model, set `rationale_model` to a Hugging
 Face model id. To run with your fine-tuned model, set it to the DPO

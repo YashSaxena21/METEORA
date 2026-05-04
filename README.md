@@ -17,6 +17,7 @@ Copy and paste this into one Colab code cell:
 
 ```python
 import os
+import importlib
 import shutil
 import subprocess
 import sys
@@ -28,10 +29,13 @@ subprocess.run(
     check=True,
 )
 os.chdir("/content/METEORA")
-subprocess.run([sys.executable, "-m", "pip", "install", "-q", "-e", "/content/METEORA"], check=True)
+subprocess.run([sys.executable, "-m", "pip", "install", "-q", "/content/METEORA"], check=True)
+if "/content/METEORA/src" not in sys.path:
+    sys.path.insert(0, "/content/METEORA/src")
+importlib.invalidate_caches()
 
 from meteora import HashingEncoder, MeteoraReranker
-print("METEORA import works")
+print("METEORA import works", flush=True)
 
 subprocess.run([sys.executable, "examples/reranker_replacement.py"], check=True)
 ```
@@ -47,15 +51,19 @@ If you already cloned the repo in the same Colab runtime, use this instead:
 
 ```python
 import os
+import importlib
 import subprocess
 import sys
 
 os.chdir("/content/METEORA")
 subprocess.run(["git", "pull"], check=True)
-subprocess.run([sys.executable, "-m", "pip", "install", "-q", "-e", "/content/METEORA"], check=True)
+subprocess.run([sys.executable, "-m", "pip", "install", "-q", "/content/METEORA"], check=True)
+if "/content/METEORA/src" not in sys.path:
+    sys.path.insert(0, "/content/METEORA/src")
+importlib.invalidate_caches()
 
 from meteora import HashingEncoder, MeteoraReranker
-print("METEORA import works")
+print("METEORA import works", flush=True)
 
 subprocess.run([sys.executable, "examples/reranker_replacement.py"], check=True)
 ```

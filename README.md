@@ -16,15 +16,24 @@ The package code lives in `src/meteora`. The original paper experiments live in
 Copy and paste this into one Colab code cell:
 
 ```python
-!rm -rf /content/METEORA
-!git clone https://github.com/YashSaxena21/METEORA.git /content/METEORA
-%cd /content/METEORA
-%pip install -q -e /content/METEORA
+import os
+import shutil
+import subprocess
+import sys
+
+os.chdir("/content")
+shutil.rmtree("/content/METEORA", ignore_errors=True)
+subprocess.run(
+    ["git", "clone", "https://github.com/YashSaxena21/METEORA.git", "/content/METEORA"],
+    check=True,
+)
+os.chdir("/content/METEORA")
+subprocess.run([sys.executable, "-m", "pip", "install", "-q", "-e", "/content/METEORA"], check=True)
 
 from meteora import HashingEncoder, MeteoraReranker
 print("METEORA import works")
 
-!python examples/reranker_replacement.py
+subprocess.run([sys.executable, "examples/reranker_replacement.py"], check=True)
 ```
 
 Expected output:
@@ -37,19 +46,24 @@ Selected document ids: ['a', 'c']
 If you already cloned the repo in the same Colab runtime, use this instead:
 
 ```python
-%cd /content/METEORA
-!git pull
-%pip install -q -e /content/METEORA
+import os
+import subprocess
+import sys
+
+os.chdir("/content/METEORA")
+subprocess.run(["git", "pull"], check=True)
+subprocess.run([sys.executable, "-m", "pip", "install", "-q", "-e", "/content/METEORA"], check=True)
 
 from meteora import HashingEncoder, MeteoraReranker
 print("METEORA import works")
 
-!python examples/reranker_replacement.py
+subprocess.run([sys.executable, "examples/reranker_replacement.py"], check=True)
 ```
 
 Do not create a virtual environment in Colab. Colab already runs inside a
-managed Python environment, and `%cd /content/METEORA` is needed so pip installs
-from the repository folder that contains `pyproject.toml`.
+managed Python environment. The setup cell starts by moving to `/content`, so it
+can safely delete and reclone `/content/METEORA` even if a previous notebook
+cell left the runtime inside that folder.
 
 If `from meteora import ...` still fails, restart the Colab runtime and run the
 single Colab cell again.

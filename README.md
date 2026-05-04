@@ -11,7 +11,39 @@ The package code lives in `src/meteora`. The original paper experiments live in
 
 ## Get Started
 
-Copy and paste this from a terminal:
+### Google Colab
+
+Copy and paste this into one Colab code cell:
+
+```python
+!git clone https://github.com/YashSaxena21/METEORA.git /content/METEORA
+%cd /content/METEORA
+!python -m pip install -q -e .
+!python examples/reranker_replacement.py
+```
+
+Expected output:
+
+```text
+Selected document ids: ['a', 'c']
+```
+
+If you already cloned the repo in the same Colab runtime, use this instead:
+
+```python
+%cd /content/METEORA
+!git pull
+!python -m pip install -q -e .
+!python examples/reranker_replacement.py
+```
+
+Do not create a virtual environment in Colab. Colab already runs inside a
+managed Python environment, and `%cd /content/METEORA` is needed so pip installs
+from the repository folder that contains `pyproject.toml`.
+
+### Local Terminal
+
+Copy and paste this from a terminal on your machine:
 
 ```bash
 git clone https://github.com/YashSaxena21/METEORA.git

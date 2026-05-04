@@ -1,26 +1,31 @@
 # METEORA
 
-METEORA is a drop-in reranker replacement for RAG pipelines.
+METEORA is a drop-in reranker replacement for retrieval-augmented generation
+pipelines. Instead of choosing a fixed top-k with a reranker, METEORA asks a
+language model to generate query-specific search rationales, then uses those
+rationales to select the evidence chunks that should be sent to the final
+generator.
 
-Instead of asking a reranker for a fixed top-k, METEORA asks an LLM to generate
-search rationales, then uses those rationales to select evidence with a
-rank-free selector.
+The package code lives in `src/meteora`. The original research experiments live
+in `Experiments/`.
 
-The package code lives in `src/meteora`. The original paper experiments live in
-`Experiments/`.
+## Quick Start In Colab
 
-## Get Started
-
-### Google Colab
-
-Copy and paste this into one Colab code cell:
+Use a GPU runtime if one is available. Copy this into one Colab cell and run it.
+It installs METEORA, loads real Wikipedia text, generates rationales with a
+1B-class model, selects evidence with a SentenceTransformer encoder, and
+generates a final answer from the selected evidence.
 
 ```python
-import os
 import importlib
+import json
+import os
+import re
 import shutil
 import subprocess
 import sys
+import urllib.parse
+import urllib.request
 
 os.chdir("/content")
 shutil.rmtree("/content/METEORA", ignore_errors=True)
@@ -29,56 +34,170 @@ subprocess.run(
     check=True,
 )
 os.chdir("/content/METEORA")
-subprocess.run([sys.executable, "-m", "pip", "install", "-q", "/content/METEORA"], check=True)
+subprocess.run(
+    [sys.executable, "-m", "pip", "install", "-q", "/content/METEORA[sentence-transformers,hf]"],
+    check=True,
+)
 if "/content/METEORA/src" not in sys.path:
     sys.path.insert(0, "/content/METEORA/src")
 importlib.invalidate_caches()
 
-from meteora import HashingEncoder, MeteoraReranker
+from meteora import HFRationaleGenerator, MeteoraReranker, SentenceTransformerEncoder
+
 print("METEORA import works", flush=True)
 
-subprocess.run([sys.executable, "examples/reranker_replacement.py"], check=True)
+def fetch_wikipedia_article(title):
+    params = urllib.parse.urlencode(
+        {
+            "action": "query",
+            "prop": "extracts",
+            "explaintext": "1",
+            "format": "json",
+            "redirects": "1",
+            "titles": title,
+        }
+    )
+    url = "https://en.wikipedia.org/w/api.php?" + params
+    request = urllib.request.Request(url, headers={"User-Agent": "METEORA example"})
+    with urllib.request.urlopen(request, timeout=30) as response:
+        data = json.load(response)
+    page = next(iter(data["query"]["pages"].values()))
+    return page["title"], page["extract"]
+
+def chunk_words(text, max_words=140, overlap=30):
+    text = re.sub(r"\s+", " ", text).strip()
+    words = text.split()
+    chunks = []
+    step = max_words - overlap
+    for start in range(0, len(words), step):
+        chunk = " ".join(words[start : start + max_words])
+        if len(chunk.split()) > 30:
+            chunks.append({"id": f"chunk-{len(chunks)}", "text": chunk})
+    return chunks
+
+title, article = fetch_wikipedia_article("Retrieval-augmented generation")
+documents = chunk_words(article)
+print("Loaded article:", title)
+print("Chunks:", len(documents))
+
+import torch
+
+model_id = "meta-llama/Llama-3.2-1B-Instruct"
+torch_dtype = "float16" if torch.cuda.is_available() else None
+
+sample_shots = [
+    {
+        "query": "What is retrieval-augmented generation?",
+        "response": """
+<rationale_1>[Definition] Search for text that defines retrieval-augmented generation.</rationale_1>
+<rationale_2>[Mechanism] Look for how retrieval is combined with model generation.</rationale_2>
+<rationale_3>[Purpose] Find why external documents are used during generation.</rationale_3>
+""",
+    },
+    {
+        "query": "Why is external evidence useful for language models?",
+        "response": """
+<rationale_1>[External knowledge] Search for mentions of external data sources or documents.</rationale_1>
+<rationale_2>[Accuracy] Look for evidence about improving factuality or reducing unsupported answers.</rationale_2>
+<rationale_3>[Query grounding] Find text connecting a user query to retrieved context.</rationale_3>
+""",
+    },
+]
+
+rationale_generator = HFRationaleGenerator(
+    model_id,
+    sample_shots=sample_shots,
+    domain="technical AI documentation",
+    num_rationales=4,
+    max_new_tokens=220,
+    do_sample=False,
+    temperature=1.0,
+    torch_dtype=torch_dtype,
+    device_map="auto",
+)
+
+encoder = SentenceTransformerEncoder("sentence-transformers/all-MiniLM-L6-v2")
+reranker = MeteoraReranker(encoder, rationale_generator=rationale_generator)
+
+query = "How does retrieval-augmented generation use external knowledge to answer questions?"
+
+raw_rationales = rationale_generator(query)
+raw_rationales = raw_rationales.split("Example 3:")[0].split("Flag Instructions:")[0].strip()
+
+print("\nGenerated rationales:\n")
+print(raw_rationales)
+
+trace = reranker.trace(
+    query=query,
+    documents=documents,
+    rationales=raw_rationales,
+    order="document",
+)
+selected_documents = [result.document for result in trace.results]
+
+print("\nSelected chunk ids:", [document["id"] for document in selected_documents])
+print("\nSelected evidence:")
+for document in selected_documents[:5]:
+    print(f"\n[{document['id']}]\n{document['text'][:900]}")
+
+def answer_with_model(query, selected_docs, generator, max_new_tokens=220):
+    context = "\n\n".join(
+        f"[{document['id']}]\n{document['text']}" for document in selected_docs[:6]
+    )
+    prompt = f"""Use only the evidence below to answer the question.
+
+Evidence:
+{context}
+
+Question: {query}
+
+Answer:"""
+
+    tokenizer = generator.tokenizer
+    model = generator.model
+    inputs = tokenizer(prompt, return_tensors="pt", truncation=True, max_length=2600)
+    try:
+        inputs = inputs.to(next(model.parameters()).device)
+    except Exception:
+        pass
+
+    outputs = model.generate(
+        **inputs,
+        max_new_tokens=max_new_tokens,
+        do_sample=False,
+        pad_token_id=tokenizer.eos_token_id,
+    )
+    input_length = inputs["input_ids"].shape[-1]
+    answer_tokens = outputs[0][input_length:]
+    return tokenizer.decode(answer_tokens, skip_special_tokens=True).strip()
+
+answer = answer_with_model(query, selected_documents, rationale_generator)
+
+print("\nFinal answer:\n")
+print(answer)
 ```
 
-Expected output:
+Expected output includes:
 
 ```text
 METEORA import works
-Selected document ids: ['a', 'c']
+Loaded article: Retrieval-augmented generation
+Chunks: ...
+Generated rationales:
+Selected chunk ids: [...]
+Final answer:
 ```
 
-If you already cloned the repo in the same Colab runtime, use this instead:
+Colab notes:
 
-```python
-import os
-import importlib
-import subprocess
-import sys
+- Do not create a virtual environment in Colab.
+- The setup cell uses a normal install instead of editable install because a
+  running notebook kernel may not notice editable package paths immediately.
+- If imports still fail, restart the Colab runtime and rerun the single cell.
 
-os.chdir("/content/METEORA")
-subprocess.run(["git", "pull"], check=True)
-subprocess.run([sys.executable, "-m", "pip", "install", "-q", "/content/METEORA"], check=True)
-if "/content/METEORA/src" not in sys.path:
-    sys.path.insert(0, "/content/METEORA/src")
-importlib.invalidate_caches()
+## Local Install
 
-from meteora import HashingEncoder, MeteoraReranker
-print("METEORA import works", flush=True)
-
-subprocess.run([sys.executable, "examples/reranker_replacement.py"], check=True)
-```
-
-Do not create a virtual environment in Colab. Colab already runs inside a
-managed Python environment. The setup cell starts by moving to `/content`, so it
-can safely delete and reclone `/content/METEORA` even if a previous notebook
-cell left the runtime inside that folder.
-
-If `from meteora import ...` still fails, restart the Colab runtime and run the
-single Colab cell again.
-
-### Local Terminal
-
-Copy and paste this from a terminal on your machine:
+For local development:
 
 ```bash
 git clone https://github.com/YashSaxena21/METEORA.git
@@ -88,88 +207,29 @@ python3 -m venv .venv
 source .venv/bin/activate
 
 python -m pip install --upgrade pip
-python -m pip install -e .
+python -m pip install -e ".[sentence-transformers,hf]"
+```
 
+Run the packaged example:
+
+```bash
 python examples/reranker_replacement.py
 ```
 
-The example should print the METEORA-selected document ids for a tiny contract
-query. This quick path uses the built-in `HashingEncoder`, so it does not
-download any model weights.
-
-For a real embedding model, install the sentence-transformers extra:
+For DPO fine-tuning support:
 
 ```bash
-python -m pip install -e ".[sentence-transformers]"
+python -m pip install -e ".[sentence-transformers,hf,training]"
 ```
 
-For Hugging Face rationale generation:
+## Replace Your Reranker
 
-```bash
-python -m pip install -e ".[hf]"
-```
-
-For DPO fine-tuning:
-
-```bash
-python -m pip install -e ".[hf,training]"
-```
-
-If you already cloned the repo and activated your environment, the minimal
-install command is:
-
-```bash
-python -m pip install -e .
-```
-
-## Quick Start
-
-This is the smallest copy-paste example. It uses a simple local rationale
-function so you can test the METEORA interface before connecting an LLM.
+Use `MeteoraReranker` where your RAG pipeline currently calls a reranker. The
+encoder should be a SentenceTransformer encoder, and the rationale generator can
+be a base Hugging Face model or your DPO fine-tuned model directory.
 
 ```python
-from meteora import HashingEncoder, MeteoraReranker
-
-documents = [
-    {"text": "The agreement may not be assigned without prior written consent.", "id": "a"},
-    {"text": "Invoices are due within thirty days after receipt.", "id": "b"},
-    {"text": "The agreement binds successors and permitted assigns.", "id": "c"},
-]
-
-def rationale_generator(query, docs):
-    return """
-<rationale_1>[Consent restriction] Search assigned written consent.</rationale_1>
-<rationale_2>[Successors and assigns] Search successors permitted assigns.</rationale_2>
-"""
-
-reranker = MeteoraReranker(
-    HashingEncoder(),
-    rationale_generator=rationale_generator,
-)
-
-selected_documents = reranker.filter(
-    "Is assignment restricted?",
-    documents,
-    order="document",
-)
-
-print([doc["id"] for doc in selected_documents])
-```
-
-That is the main intended use: replace your existing reranker with
-`MeteoraReranker`.
-
-## Using An LLM Rationale Generator
-
-Every rationale prompt requires sample shots. Pass examples from your domain so
-the model learns the style of rationales you want.
-
-```python
-from meteora import (
-    HFRationaleGenerator,
-    MeteoraReranker,
-    SentenceTransformerEncoder,
-)
+from meteora import HFRationaleGenerator, MeteoraReranker, SentenceTransformerEncoder
 
 sample_shots = [
     {
@@ -181,15 +241,18 @@ sample_shots = [
     }
 ]
 
-# Choose either a normal model id or a fine-tuned model directory.
-rationale_model = "meta-llama/Llama-3.1-8B-Instruct"
+rationale_model = "meta-llama/Llama-3.2-1B-Instruct"
 # rationale_model = "models/meteora-rationale-dpo"
 
 rationale_generator = HFRationaleGenerator(
     rationale_model,
     sample_shots=sample_shots,
     domain="commercial contracts",
+    num_rationales=4,
+    max_new_tokens=256,
+    do_sample=False,
     torch_dtype="float16",
+    device_map="auto",
 )
 
 reranker = MeteoraReranker(
@@ -197,7 +260,7 @@ reranker = MeteoraReranker(
     rationale_generator=rationale_generator,
 )
 
-clean_documents = reranker.filter(
+selected_documents = reranker.filter(
     query="Is assignment restricted?",
     documents=[
         "The agreement may not be assigned without prior written consent.",
@@ -207,9 +270,14 @@ clean_documents = reranker.filter(
 )
 ```
 
-To run your dataset with the normal model, set `rationale_model` to a Hugging
-Face model id. To run with your fine-tuned model, set it to the DPO
-`--output-dir` path, for example `models/meteora-rationale-dpo`.
+Use `trace(...)` when you want rationales, selected chunks, scores, and
+verification diagnostics:
+
+```python
+trace = reranker.trace(query, candidate_documents)
+print(trace.indices)
+print([rationale.text for rationale in trace.rationales])
+```
 
 ## Inputs
 
@@ -220,25 +288,16 @@ Face model id. To run with your fine-tuned model, set it to the DPO
 - `Chunk` objects
 - LangChain-style documents with `page_content`
 
-Use `rerank(...)` when you want scores and diagnostics:
+The most common outputs are:
 
-```python
-results = reranker.rerank(query, candidate_documents)
-for result in results:
-    print(result.rank, result.score, result.document)
-```
-
-Use `filter(...)` when your RAG pipeline expects documents back:
-
-```python
-documents = reranker.filter(query, candidate_documents)
-```
+- `filter(query, documents)`: returns the selected original documents
+- `rerank(query, documents)`: returns scored `RerankResult` objects
+- `trace(query, documents)`: returns rationales, selection details, and results
 
 ## Sample Shots
 
-Sample shots are required for prompt construction.
-
-They can be structured:
+Sample shots are required. They teach the rationale generator the format and
+domain style you want.
 
 ```python
 sample_shots = [
@@ -249,20 +308,10 @@ sample_shots = [
 ]
 ```
 
-Or preformatted strings:
-
-```python
-sample_shots = [
-    """Query: What happens after a change of control?
-Rationales:
-<rationale_1>[Control trigger] Search for change of control, merger, acquisition, and termination rights.</rationale_1>"""
-]
-```
-
 ## Optional Verifier
 
 You can attach a verifier model to reject irrelevant, contradictory, or poisoned
-evidence.
+evidence after selection.
 
 ```python
 from meteora import MeteoraReranker
@@ -283,7 +332,7 @@ clean_documents = verified_reranker.filter(query, candidate_documents)
 
 METEORA includes a DPO path for fine-tuning the rationale generator.
 
-Create a `sample_shots.json` file:
+Create `sample_shots.json`:
 
 ```json
 [
@@ -310,32 +359,28 @@ Train:
 meteora dpo-train \
   --train data/dpo/train.jsonl \
   --validation data/dpo/validation.jsonl \
-  --model meta-llama/Llama-3.1-8B-Instruct \
+  --model meta-llama/Llama-3.2-1B-Instruct \
   --output-dir models/meteora-rationale-dpo \
   --torch-dtype float16
 ```
 
 The fine-tuned model is saved to `--output-dir` with the tokenizer and a
-`meteora_dpo_config.json` metadata file. Use that same directory as
-`rationale_model` when running METEORA on your dataset:
+`meteora_dpo_config.json` metadata file. To use the fine-tuned model, set
+`rationale_model` to that output directory:
 
 ```python
-normal_model = "meta-llama/Llama-3.1-8B-Instruct"
-fine_tuned_model = "models/meteora-rationale-dpo"
+rationale_model = "models/meteora-rationale-dpo"
+```
 
-rationale_generator = HFRationaleGenerator(
-    fine_tuned_model,  # change to normal_model if you do not want the tuned model
-    sample_shots=sample_shots,
-    domain="commercial contracts",
-    torch_dtype="float16",
-)
+To use a normal model instead, set `rationale_model` to a Hugging Face model id:
+
+```python
+rationale_model = "TinyLlama/TinyLlama-1.1B-Chat-v1.0"
 ```
 
 The DPO defaults match the paper setup: 80/10/10 split, 3 epochs, learning rate
 `3e-5`, cosine scheduler, beta `0.05`, batch size `1`, and gradient
-accumulation `2`. Training saves the final fine-tuned checkpoint by default;
-set `load_best_model_at_end=True` in `DPOTrainingConfig` if you want to reload
-the lowest validation-loss checkpoint before saving.
+accumulation `2`. Training saves the final fine-tuned checkpoint by default.
 
 ## CLI Selection
 
@@ -358,7 +403,7 @@ meteora select \
 ## Development
 
 ```bash
-pip install -e ".[dev]"
+python -m pip install -e ".[sentence-transformers,hf,training,dev]"
 python -m unittest discover -s tests
 python -m build
 ```
@@ -366,12 +411,13 @@ python -m build
 ## Citation
 
 ```bibtex
-@inproceedings{
-anonymous2026ranking,
-title={Ranking Free {RAG}: Replacing Re-ranking with Selection in {RAG} for Sensitive Domains},
-author={Anonymous},
-booktitle={Forty-third International Conference on Machine Learning},
-year={2026},
-url={https://openreview.net/forum?id=O88FCPAPAj}
+@misc{saxena2026rankingfreeragreplacing,
+      title={Ranking Free RAG: Replacing Re-ranking with Selection in RAG for Sensitive Domains}, 
+      author={Yash Saxena and Ankur Padia and Mandar S Chaudhary and Kalpa Gunaratna and Srinivasan Parthasarathy and Manas Gaur},
+      year={2026},
+      eprint={2505.16014},
+      archivePrefix={arXiv},
+      primaryClass={cs.CL},
+      url={https://arxiv.org/abs/2505.16014}, 
 }
 ```

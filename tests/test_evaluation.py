@@ -1,6 +1,6 @@
 import unittest
 
-from meteora import precision_recall_f1
+from meteora_rag import precision_recall_f1
 
 
 class EvaluationTest(unittest.TestCase):

@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" role="img" aria-labelledby="title desc">
+  <title id="title">METEORA mark</title>
+  <desc id="desc">A meteor-shaped research logo for METEORA.</desc>
+  <rect width="96" height="96" rx="22" fill="#111827"/>
+  <path d="M18 60c16-22 34-34 60-42-11 13-21 27-27 43-2 5-5 9-10 11-8 4-17 1-23-12Z" fill="#f5c542"/>
+  <path d="M23 58c13-17 29-27 49-34-12 12-21 25-26 38-2 4-4 7-8 8-6 2-12-1-15-12Z" fill="#2dd4bf"/>
+  <path d="M16 23h21M12 36h15M58 75h20" stroke="#f8fafc" stroke-width="5" stroke-linecap="round"/>
+  <circle cx="72" cy="24" r="4" fill="#f8fafc"/>
+  <circle cx="78" cy="68" r="3" fill="#f8fafc"/>
+</svg>

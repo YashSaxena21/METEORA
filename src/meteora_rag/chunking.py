@@ -31,9 +31,7 @@ def chunk_text(text: str, chunk_size: int = 256, overlap: Optional[int] = None) 
         start_pos = matches[start_word].start()
         end_pos = matches[end_word - 1].end()
         chunk = text[start_pos:end_pos]
-        chunks.append(
-            Chunk(text=chunk, index=len(chunks), start_pos=start_pos, end_pos=end_pos)
-        )
+        chunks.append(Chunk(text=chunk, index=len(chunks), start_pos=start_pos, end_pos=end_pos))
         if end_word >= len(matches):
             break
     return chunks
@@ -62,7 +60,9 @@ def find_spanning_chunks(
     return list(range(min(overlapping), max(overlapping) + 1))
 
 
-def chunk_texts(texts: Iterable[str], chunk_size: int = 256, overlap: Optional[int] = None) -> List[Chunk]:
+def chunk_texts(
+    texts: Iterable[str], chunk_size: int = 256, overlap: Optional[int] = None
+) -> List[Chunk]:
     """Chunk multiple documents and retain each document id in chunk metadata."""
 
     all_chunks: List[Chunk] = []

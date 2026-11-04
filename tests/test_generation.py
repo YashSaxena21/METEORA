@@ -1,7 +1,6 @@
 import unittest
 
-from meteora import HFRationaleGenerator
-
+from meteora_rag import HFRationaleGenerator
 
 SAMPLE_SHOTS = [
     {
@@ -12,6 +11,88 @@ SAMPLE_SHOTS = [
 
 
 class GenerationTest(unittest.TestCase):
+    def test_chat_template_formats_prompt_without_duplicate_special_tokens(self):
+        class Tokenizer:
+            chat_template = "example template"
+
+            def apply_chat_template(self, messages, tokenize, add_generation_prompt):
+                self.messages = messages
+                self.template_options = (tokenize, add_generation_prompt)
+                return "formatted chat prompt"
+
+            def __call__(self, prompt, **kwargs):
+                self.prompt = prompt
+                self.tokenizer_options = kwargs
+                return {}
+
+            def decode(self, output, skip_special_tokens=True):
+                return "<rationale_1>Search for return deadlines.</rationale_1>"
+
+        class Model:
+            def generate(self, **kwargs):
+                return [[1, 2]]
+
+        tokenizer = Tokenizer()
+        generator = HFRationaleGenerator(
+            "unused",
+            sample_shots=SAMPLE_SHOTS,
+            model=Model(),
+            tokenizer=tokenizer,
+            use_chat_template=True,
+        )
+        generator("How long can I return an item?")
+        self.assertEqual(tokenizer.messages[0]["role"], "user")
+        self.assertIn("How long can I return an item?", tokenizer.messages[0]["content"])
+        self.assertEqual(tokenizer.template_options, (False, True))
+        self.assertEqual(tokenizer.prompt, "formatted chat prompt")
+        self.assertFalse(tokenizer.tokenizer_options["add_special_tokens"])
+
+    def test_chat_template_requires_a_compatible_tokenizer(self):
+        generator = HFRationaleGenerator(
+            "unused",
+            sample_shots=SAMPLE_SHOTS,
+            model=object(),
+            tokenizer=object(),
+            use_chat_template=True,
+        )
+        with self.assertRaisesRegex(ValueError, "chat template"):
+            generator("question")
+
+    def test_generated_response_excludes_unrelated_continuation_and_keeps_flags(self):
+        response = (
+            "Query: Is assignment restricted?\n"
+            "<rationale_1>[Consent] Search for consent. Flag Instructions: Reject reversed permissions.</rationale_1>\n"
+            "Query: What is the governing law?\n"
+            "<rationale_1>[Law] Search for jurisdiction.</rationale_1>"
+        )
+        generator = HFRationaleGenerator(
+            "unused",
+            sample_shots=SAMPLE_SHOTS,
+            num_rationales=4,
+            generate_fn=lambda prompt: response,
+        )
+        result = generator("Is assignment restricted?")
+        self.assertIn("Reject reversed permissions.", result)
+        self.assertNotIn("jurisdiction", result)
+        self.assertNotIn("Query:", result)
+
+    def test_generated_response_respects_requested_rationale_count(self):
+        generator = HFRationaleGenerator(
+            "unused",
+            sample_shots=SAMPLE_SHOTS,
+            num_rationales=1,
+            generate_fn=lambda prompt: (
+                "<rationale_1>first</rationale_1><rationale_2>second</rationale_2>"
+            ),
+        )
+        self.assertEqual(generator("question"), "<rationale_1>first</rationale_1>")
+
+    def test_invalid_prompt_settings_are_rejected_at_construction(self):
+        with self.assertRaises(ValueError):
+            HFRationaleGenerator("unused", sample_shots=[], generate_fn=lambda prompt: "")
+        with self.assertRaises(ValueError):
+            HFRationaleGenerator("unused", sample_shots=SAMPLE_SHOTS, max_new_tokens=0)
+
     def test_hf_rationale_generator_uses_selected_model_path_and_sample_shots(self):
         prompts = []
 

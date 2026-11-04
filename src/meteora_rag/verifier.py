@@ -13,8 +13,7 @@ from .types import Chunk, ChunkLike, Rationale, RationaleLike, SelectionResult, 
 
 
 class VerifierModel(Protocol):
-    def __call__(self, prompt: str) -> Any:
-        ...
+    def __call__(self, prompt: str) -> Any: ...
 
 
 VerifierModelLike = Union[VerifierModel, Callable[[str], Any]]
@@ -57,7 +56,7 @@ class VerificationResult:
 
 @dataclass(frozen=True)
 class VerifiedSelection:
-    """A selected evidence set after verifier filtering."""
+    """Per-chunk verification decisions and accepted or rejected evidence views."""
 
     query: str
     rationales: Sequence[Rationale]
@@ -102,7 +101,16 @@ class VerifiedSelection:
 
 
 class MeteoraVerifier:
-    """Runnable verifier stage for filtering selected METEORA evidence."""
+    """Filter selected evidence using a caller-supplied language model.
+
+    The model receives one text prompt per chunk and must return a mapping or
+    JSON text containing ``relevant`` and ``flagged`` boolean decisions. A chunk
+    is accepted only when relevant and unflagged. Previously accepted chunks
+    are included in later prompts for consistency checking.
+
+    ``fail_closed=True`` rejects malformed decisions. Model execution errors
+    propagate to the caller so that connection or backend failures stay visible.
+    """
 
     def __init__(self, model: VerifierModelLike, fail_closed: bool = True) -> None:
         self.model = model
@@ -154,7 +162,9 @@ class MeteoraVerifier:
             if result.accepted:
                 accepted_chunks.append(result.chunk)
 
-        return VerifiedSelection(query=query, rationales=normalized_rationales, results=tuple(results))
+        return VerifiedSelection(
+            query=query, rationales=normalized_rationales, results=tuple(results)
+        )
 
     def verify_selection(self, query: str, selection: SelectionResult) -> VerifiedSelection:
         return self.verify_chunks(
@@ -170,10 +180,14 @@ def parse_verifier_response(
     chunk: Chunk,
     fail_closed: bool = True,
 ) -> VerificationResult:
-    """Parse a verifier model response into a structured decision."""
+    """Parse explicit relevance and flag decisions; reject malformed output by default."""
 
     try:
         payload = _coerce_response_payload(response)
+        if not {"relevant", "flagged"}.issubset(payload):
+            raise ValueError("response must contain both 'relevant' and 'flagged' decisions")
+        flagged = _to_bool(payload["flagged"])
+        relevant = _to_bool(payload["relevant"])
     except ValueError as exc:
         flagged = bool(fail_closed)
         return VerificationResult(
@@ -185,15 +199,14 @@ def parse_verifier_response(
             raw_response=response,
         )
 
-    flagged = _to_bool(payload.get("flagged"), default=False)
-    relevant = _to_bool(payload.get("relevant"), default=not flagged)
     reason = str(payload.get("reason") or payload.get("explanation") or "").strip()
     confidence = _optional_float(payload.get("confidence"))
     flag_types = _normalize_flag_types(payload.get("flag_types") or payload.get("flags"))
     metadata = {
         key: value
         for key, value in payload.items()
-        if key not in {"relevant", "flagged", "reason", "explanation", "confidence", "flag_types", "flags"}
+        if key
+        not in {"relevant", "flagged", "reason", "explanation", "confidence", "flag_types", "flags"}
     }
 
     if flagged and not flag_types:
@@ -293,12 +306,12 @@ def _extract_json_object(text: str) -> Optional[str]:
 def _parse_boolean_fallback(text: str) -> Optional[Mapping[str, Any]]:
     flagged = _match_bool_field(text, "flagged")
     relevant = _match_bool_field(text, "relevant")
-    if flagged is None and relevant is None:
+    if flagged is None or relevant is None:
         return None
     reason_match = re.search(r"reason\s*[:=-]\s*(.+)", text, re.IGNORECASE)
     return {
-        "flagged": flagged if flagged is not None else False,
-        "relevant": relevant if relevant is not None else not bool(flagged),
+        "flagged": flagged,
+        "relevant": relevant,
         "reason": reason_match.group(1).strip() if reason_match else "",
     }
 
@@ -310,12 +323,10 @@ def _match_bool_field(text: str, field: str) -> Optional[bool]:
     return match.group(1).lower() in {"true", "yes"}
 
 
-def _to_bool(value: Any, default: bool) -> bool:
-    if value is None:
-        return default
+def _to_bool(value: Any) -> bool:
     if isinstance(value, bool):
         return value
-    if isinstance(value, (int, float)):
+    if isinstance(value, (int, float)) and value in (0, 1):
         return bool(value)
     if isinstance(value, str):
         normalized = value.strip().lower()
@@ -323,7 +334,7 @@ def _to_bool(value: Any, default: bool) -> bool:
             return True
         if normalized in {"false", "no", "0", "rejected"}:
             return False
-    return default
+    raise ValueError(f"expected a boolean decision, received {value!r}")
 
 
 def _optional_float(value: Any) -> Optional[float]:

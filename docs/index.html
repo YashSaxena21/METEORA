@@ -1,0 +1,619 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>METEORA: Ranking-Free RAG</title>
+  <meta name="description" content="METEORA replaces re-ranking in RAG with rationale-driven, rank-free evidence selection. ICML 2026.">
+  <meta name="theme-color" content="#080c14">
+  <link rel="canonical" href="https://yashsaxena21.github.io/METEORA/">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Mono:ital,wght@0,300;0,400;0,500;1,400&family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,400;0,9..144,600;1,9..144,300;1,9..144,400&family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;1,9..40,300&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg: #080c14;
+      --bg-1: #0d1220;
+      --bg-2: #111826;
+      --border: rgba(255,255,255,0.07);
+      --border-mid: rgba(255,255,255,0.13);
+      --accent: #5b8fff;
+      --text: #e8ecf4;
+      --text-2: #8b94a8;
+      --text-3: #485265;
+      --green: #3dd68c;
+      --mono: 'DM Mono', monospace;
+      --serif: 'Fraunces', Georgia, serif;
+      --sans: 'DM Sans', system-ui, sans-serif;
+    }
+    html { scroll-padding-top: 70px; }
+    body { background: var(--bg); color: var(--text); font-family: var(--sans); font-size: 16px; line-height: 1.6; -webkit-font-smoothing: antialiased; }
+
+    /* NAV */
+    nav { position: fixed; top: 0; left: 0; right: 0; z-index: 100; display: flex; align-items: center; justify-content: space-between; padding: 0 2.5rem; height: 54px; background: rgba(8,12,20,0.9); backdrop-filter: blur(16px); border-bottom: 1px solid var(--border); }
+    .nav-brand { font-family: var(--mono); font-size: 13px; letter-spacing: 0.12em; color: var(--accent); text-decoration: none; text-transform: uppercase; }
+    .nav-links { display: flex; gap: 2rem; list-style: none; }
+    .nav-links a { font-size: 13px; color: var(--text-2); text-decoration: none; letter-spacing: 0.02em; transition: color 0.15s; }
+    .nav-links a:hover { color: var(--text); }
+
+    /* HERO */
+    .hero { min-height: 100vh; display: flex; flex-direction: column; justify-content: center; padding: 8rem 2.5rem 5rem; max-width: 1100px; margin: 0 auto; }
+    .venue-row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 2rem; }
+    .pill { font-family: var(--mono); font-size: 11px; letter-spacing: 0.09em; text-transform: uppercase; background: var(--bg-2); border: 1px solid var(--border-mid); border-radius: 2px; padding: 3px 9px; color: var(--text-2); }
+    .icml-logo { height: 28px; width: auto; display: block; opacity: 0.85; filter: brightness(0) invert(1); }
+    .hero-title { font-family: var(--serif); font-size: clamp(2.6rem, 5.5vw, 4.6rem); font-weight: 300; line-height: 1.1; letter-spacing: -0.02em; color: var(--text); max-width: 860px; margin-bottom: 1.5rem; }
+    .hero-title em { font-style: italic; color: var(--accent); }
+    .abstract { font-size: 1rem; color: var(--text-2); max-width: 680px; line-height: 1.8; margin-bottom: 2.5rem; }
+    .hero-actions { display: flex; gap: 0.75rem; flex-wrap: wrap; margin-bottom: 4rem; }
+    .btn { display: inline-flex; align-items: center; gap: 7px; padding: 10px 20px; border-radius: 3px; font-size: 13px; font-weight: 500; text-decoration: none; letter-spacing: 0.02em; transition: all 0.18s; cursor: pointer; border: none; }
+    .btn svg { width: 14px; height: 14px; fill: currentColor; flex-shrink: 0; }
+    .btn-primary { background: var(--accent); color: #fff; }
+    .btn-primary:hover { background: #7aa5ff; transform: translateY(-1px); }
+    .btn-ghost { background: transparent; color: var(--text-2); border: 1px solid var(--border-mid); }
+    .btn-ghost:hover { color: var(--text); border-color: rgba(255,255,255,0.25); }
+    .stats-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1px; background: var(--border); border: 1px solid var(--border); border-radius: 4px; overflow: hidden; }
+    .stat { background: var(--bg-1); padding: 1.5rem 1.75rem; }
+    .stat-val { font-family: var(--mono); font-size: 1.7rem; font-weight: 400; color: var(--accent); display: block; line-height: 1; margin-bottom: 6px; }
+    .stat-label { font-size: 12px; color: var(--text-3); letter-spacing: 0.04em; }
+
+    /* SECTIONS */
+    section { padding: 5.5rem 2.5rem; max-width: 1100px; margin: 0 auto; }
+    .section-label { font-family: var(--mono); font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--text-3); margin-bottom: 1.25rem; display: block; }
+    h2 { font-family: var(--serif); font-size: clamp(1.7rem, 3vw, 2.4rem); font-weight: 300; line-height: 1.2; letter-spacing: -0.015em; color: var(--text); margin-bottom: 0.9rem; }
+    .section-lead { font-size: 0.97rem; color: var(--text-2); max-width: 640px; line-height: 1.8; margin-bottom: 2.75rem; }
+    hr.divider { border: none; border-top: 1px solid var(--border); margin: 0; }
+
+    /* PROBLEM */
+    .problem-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1px; background: var(--border); border: 1px solid var(--border); border-radius: 4px; overflow: hidden; }
+    .problem-card { background: var(--bg-1); padding: 1.75rem; }
+    .problem-card h3 { font-size: 0.88rem; font-weight: 500; color: var(--text); margin-bottom: 0.6rem; display: flex; align-items: center; gap: 8px; }
+    .problem-card h3::before { content: ''; display: block; width: 6px; height: 6px; border-radius: 50%; background: rgba(255,107,107,0.65); flex-shrink: 0; }
+    .problem-card p { font-size: 0.82rem; color: var(--text-2); line-height: 1.65; }
+
+    /* METHOD */
+    .method-figure { width: 100%; border-radius: 4px; border: 1px solid var(--border); display: block; margin-bottom: 2.5rem; background: var(--bg-1); }
+    .steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1px; background: var(--border); border: 1px solid var(--border); border-radius: 4px; overflow: hidden; }
+    .step { background: var(--bg-1); padding: 1.75rem; }
+    .step-num { font-family: var(--mono); font-size: 10px; color: var(--text-3); letter-spacing: 0.1em; text-transform: uppercase; margin-bottom: 0.75rem; display: block; }
+    .step h3 { font-size: 0.88rem; font-weight: 500; color: var(--text); margin-bottom: 0.5rem; }
+    .step p { font-size: 0.8rem; color: var(--text-2); line-height: 1.65; }
+
+    /* DATASETS */
+    .table-scroll { max-width: 100%; overflow-x: auto; }
+    .dataset-table { width: 100%; border-collapse: collapse; border: 1px solid var(--border); border-radius: 4px; overflow: hidden; font-size: 0.82rem; }
+    .dataset-table th { font-family: var(--mono); font-size: 10px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-3); font-weight: 400; background: var(--bg-2); padding: 10px 14px; text-align: left; border-bottom: 1px solid var(--border); }
+    .dataset-table td { padding: 10px 14px; color: var(--text-2); border-bottom: 1px solid var(--border); vertical-align: top; }
+    .dataset-table tr:last-child td { border-bottom: none; }
+    .dataset-table tr:hover td { background: var(--bg-2); }
+    .domain-badge { font-family: var(--mono); font-size: 10px; text-transform: uppercase; letter-spacing: 0.07em; padding: 2px 7px; border-radius: 2px; white-space: nowrap; }
+    .d-legal { background: rgba(91,143,255,0.12); color: #7aa5ff; }
+    .d-finance { background: rgba(61,214,140,0.1); color: #3dd68c; }
+    .d-academic { background: rgba(245,166,35,0.12); color: #f5a623; }
+
+    /* RESULTS */
+    .results-numbers { display: grid; grid-template-columns: repeat(5, 1fr); gap: 1px; background: var(--border); border: 1px solid var(--border); border-radius: 4px; overflow: hidden; margin-bottom: 2.5rem; }
+    .result-card { background: var(--bg-1); padding: 1.5rem 1.2rem; }
+    .result-val { font-family: var(--serif); font-size: 1.6rem; font-weight: 300; color: var(--green); display: block; line-height: 1; margin-bottom: 0.5rem; }
+    .result-card p { font-size: 11px; color: var(--text-3); line-height: 1.5; }
+    /* CODE */
+    .code-tabs { border: 1px solid var(--border); border-radius: 4px; overflow: hidden; }
+    .code-tabs-header { display: flex; background: var(--bg-2); border-bottom: 1px solid var(--border); }
+    .tab-btn { padding: 10px 18px; font-family: var(--mono); font-size: 12px; color: var(--text-3); background: none; border: none; cursor: pointer; letter-spacing: 0.04em; transition: color 0.15s; border-bottom: 2px solid transparent; margin-bottom: -1px; }
+    .tab-btn.active { color: var(--accent); border-bottom-color: var(--accent); }
+    .tab-btn:hover:not(.active) { color: var(--text-2); }
+    .code-panel { display: none; }
+    .code-panel.active { display: block; }
+    .code-header { display: flex; align-items: center; justify-content: space-between; padding: 8px 16px; background: var(--bg-2); border-bottom: 1px solid var(--border); }
+    .code-header span { font-family: var(--mono); font-size: 11px; color: var(--text-3); letter-spacing: 0.06em; }
+    .copy-btn { font-family: var(--mono); font-size: 11px; color: var(--text-3); background: none; border: 1px solid var(--border-mid); border-radius: 2px; padding: 3px 8px; cursor: pointer; transition: color 0.15s; }
+    .copy-btn:hover { color: var(--text); }
+    pre { background: var(--bg-1); padding: 1.5rem; overflow-x: auto; margin: 0; }
+    code { font-family: var(--mono); font-size: 12.5px; color: var(--text-2); line-height: 1.75; }
+    .kw { color: var(--accent); }
+    .str { color: var(--green); }
+    .cmt { color: var(--text-3); font-style: italic; }
+    .fn { color: #e8b86d; }
+
+    /* AUTHORS */
+    .author-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1px; background: var(--border); border: 1px solid var(--border); border-radius: 4px; overflow: hidden; }
+    .author-card { background: var(--bg-1); padding: 1.5rem; text-decoration: none; transition: background 0.15s; display: flex; align-items: center; gap: 1rem; }
+    .author-card:hover { background: var(--bg-2); }
+    .author-photo { width: 48px; height: 48px; border-radius: 50%; object-fit: cover; flex-shrink: 0; background: var(--bg-2); border: 1px solid var(--border-mid); }
+    .author-info { display: flex; flex-direction: column; gap: 2px; }
+    .author-name { font-weight: 500; font-size: 0.88rem; color: var(--text); }
+    .author-role { font-size: 0.76rem; color: var(--text-3); }
+    .author-org { font-size: 0.76rem; color: var(--text-2); }
+
+    /* CITATION */
+    .citation-box { border: 1px solid var(--border); border-radius: 4px; overflow: hidden; }
+    .citation-header { display: flex; align-items: center; justify-content: space-between; padding: 10px 1.25rem; background: var(--bg-2); border-bottom: 1px solid var(--border); }
+    .citation-header span { font-family: var(--mono); font-size: 11px; color: var(--text-3); text-transform: uppercase; letter-spacing: 0.1em; }
+
+    /* LINKS */
+    .links-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1px; background: var(--border); border: 1px solid var(--border); border-radius: 4px; overflow: hidden; }
+    .link-card { background: var(--bg-1); padding: 1.5rem; text-decoration: none; display: block; transition: background 0.15s; }
+    .link-card:hover { background: var(--bg-2); }
+    .link-type { font-family: var(--mono); font-size: 10px; text-transform: uppercase; letter-spacing: 0.1em; color: var(--text-3); display: block; margin-bottom: 8px; }
+    .link-title { font-size: 0.88rem; font-weight: 500; color: var(--text); display: block; margin-bottom: 5px; }
+    .link-desc { font-size: 0.77rem; color: var(--text-2); line-height: 1.5; }
+
+    /* FOOTER */
+    footer { border-top: 1px solid var(--border); padding: 2rem 2.5rem; display: flex; align-items: center; justify-content: space-between; }
+    .footer-brand { font-family: var(--mono); font-size: 12px; letter-spacing: 0.1em; color: var(--text-3); text-transform: uppercase; text-decoration: none; }
+    .footer-links { display: flex; gap: 1.5rem; }
+    .footer-links a { font-size: 12px; color: var(--text-3); text-decoration: none; }
+    .footer-links a:hover { color: var(--text-2); }
+
+    @media (max-width: 820px) {
+      nav { padding: 0 1.25rem; }
+      .nav-links { display: none; }
+      .hero, section { padding-left: 1.25rem; padding-right: 1.25rem; }
+      .stats-row, .problem-grid, .steps, .author-grid { grid-template-columns: 1fr; }
+      .results-numbers { grid-template-columns: repeat(2, 1fr); }
+      .links-grid { grid-template-columns: 1fr; }
+      .code-tabs-header { overflow-x: auto; }
+      .tab-btn { flex-shrink: 0; }
+      footer { padding: 2rem 1.25rem; flex-direction: column; align-items: flex-start; gap: 1rem; }
+      .footer-links { flex-wrap: wrap; gap: 0.75rem 1.25rem; }
+    }
+  </style>
+</head>
+<body>
+
+<nav>
+  <a class="nav-brand" href="#top">METEORA</a>
+  <ul class="nav-links">
+    <li><a href="#problem">Problem</a></li>
+    <li><a href="#method">Method</a></li>
+    <li><a href="#results">Results</a></li>
+    <li><a href="#code">Code</a></li>
+    <li><a href="#authors">Authors</a></li>
+    <li><a href="https://arxiv.org/abs/2505.16014">Paper</a></li>
+  </ul>
+</nav>
+
+<!-- HERO -->
+<div class="hero" id="top">
+  <div class="venue-row">
+    <img src="assets/icml-logo.svg" alt="ICML logo" class="icml-logo">
+    <span class="pill">ICML 2026</span>
+  </div>
+
+  <h1 class="hero-title">Ranking-free evidence<br>selection for <em>sensitive-domain</em> RAG.</h1>
+
+  <p class="abstract">
+    METEORA selects passages for retrieval-augmented generation (RAG) using explicit search rationales. A language model generates query-specific search instructions, an adaptive selector finds matching evidence, and a verifier can check selected passages for contradictions and misleading instructions before they reach the answer model.
+  </p>
+
+  <div class="hero-actions">
+    <a class="btn btn-primary" href="https://github.com/YashSaxena21/METEORA">
+      <svg viewBox="0 0 24 24"><path d="M12 .75a11.25 11.25 0 0 0-3.56 21.92c.56.1.77-.24.77-.54v-1.92c-3.14.68-3.8-1.35-3.8-1.35-.52-1.3-1.26-1.65-1.26-1.65-1.02-.7.08-.69.08-.69 1.14.08 1.74 1.18 1.74 1.18 1 .1.61 2.66 2.98 1.9.1-.74.4-1.24.72-1.52-2.5-.29-5.13-1.25-5.13-5.56 0-1.23.44-2.23 1.17-3.02-.12-.28-.51-1.43.11-2.98 0 0 .96-.3 3.13 1.16A10.9 10.9 0 0 1 12 6.8c.97 0 1.94.13 2.85.39 2.17-1.47 3.12-1.16 3.12-1.16.63 1.55.24 2.7.12 2.98.73.79 1.16 1.79 1.16 3.02 0 4.32-2.63 5.27-5.14 5.55.41.36.77 1.06.77 2.13v3.16c0 .3.2.65.78.54A11.25 11.25 0 0 0 12 .75Z"/></svg>
+      GitHub
+    </a>
+    <a class="btn btn-ghost" href="https://arxiv.org/abs/2505.16014">Paper</a>
+    <a class="btn btn-ghost" href="#code">Quick start</a>
+  </div>
+
+  <div class="stats-row">
+    <div class="stat">
+      <span class="stat-val">+13.41%</span>
+      <span class="stat-label">Paper benchmark: average recall improvement</span>
+    </div>
+    <div class="stat">
+      <span class="stat-val">+33.34%</span>
+      <span class="stat-label">Downstream generation accuracy</span>
+    </div>
+    <div class="stat">
+      <span class="stat-val">0.10 to 0.44</span>
+      <span class="stat-label">Adversarial defense F1 score</span>
+    </div>
+  </div>
+</div>
+
+<hr class="divider">
+
+<!-- PROBLEM -->
+<section id="problem">
+  <span class="section-label">Motivation</span>
+  <h2>Three challenges in evidence selection.</h2>
+  <p class="section-lead">
+    Legal, financial, and research applications need accurate, traceable evidence. Similarity scores alone leave important questions about selection, context, and consistency.
+  </p>
+  <div class="problem-grid">
+    <div class="problem-card">
+      <h3>Limited selection explanations</h3>
+      <p>A relevance score does not necessarily explain which aspect of a question a passage supports. Explicit search rationales make that selection criterion available for inspection.</p>
+    </div>
+    <div class="problem-card">
+      <h3>Arbitrary top-k cutoffs</h3>
+      <p>The value of k is a heuristic that must be hand-tuned per dataset and query type. Too few chunks omit critical context; too many introduce noise that degrades generation quality.</p>
+    </div>
+    <div class="problem-card">
+      <h3>Vulnerable to poisoning</h3>
+      <p>A passage can resemble relevant evidence while contradicting other passages or containing instructions that attempt to redirect the model. Relevance scoring alone does not provide a consistency check.</p>
+    </div>
+  </div>
+</section>
+
+<hr class="divider">
+
+<!-- METHOD -->
+<section id="method">
+  <span class="section-label">Method</span>
+  <h2>METEORA: rationale-driven selection in two phases.</h2>
+  <p class="section-lead">
+    Phase one uses Direct Preference Optimization (DPO) to train an LLM to prefer rationales that retrieve known supporting passages. Preference data requires useful and less useful rationales, or candidates evaluated against evidence annotations. Phase two uses those rationales to select, adaptively threshold, expand, and verify evidence before generation.
+  </p>
+
+  <img class="method-figure" src="assets/main.png" alt="METEORA framework overview: rationale generation, ECSE selection pipeline, and verifier filtering, compared with traditional rerankers and LLM rerankers.">
+
+  <div class="steps">
+    <div class="step">
+      <span class="step-num">Phase 1: Rationale generation</span>
+      <h3>Preference-tuned via DPO</h3>
+      <p>A general-purpose LLM is fine-tuned using Direct Preference Optimization. Rationales that lead to correct evidence selection are positive samples; others are negative. Evaluated candidate rationales can be grouped into preference pairs using existing evidence annotations.</p>
+    </div>
+    <div class="step">
+      <span class="step-num">Phase 2, ECSE step 1: Local pairing</span>
+      <h3>Rationale-evidence alignment</h3>
+      <p>Each generated rationale is encoded and paired with its most similar evidence chunk via cosine similarity. Multiple rationales may select the same chunk; the pairing diagnostics record each match.</p>
+    </div>
+    <div class="step">
+      <span class="step-num">Phase 2, ECSE step 2: Global cutoff</span>
+      <h3>Adaptive threshold via elbow detection</h3>
+      <p>A pooled rationale embedding scores all chunks globally. First-order similarity differences are z-score normalized; the first drop above a configured z-score threshold defines the cutoff, with a fallback when no drop exceeds it. No fixed top-k is required as the threshold adapts to each query.</p>
+    </div>
+    <div class="step">
+      <span class="step-num">Phase 2, ECSE step 3: Expansion</span>
+      <h3>Neighboring chunk recovery</h3>
+      <p>When neighboring expansion is enabled, adjacent chunks are added to the selection. This recovers evidence that spans chunk boundaries within an ordered document and would otherwise be lost to chunking artifacts. Final evidence: Es = Ev + Eg + Ew.</p>
+    </div>
+    <div class="step">
+      <span class="step-num">Phase 2: Verification</span>
+      <h3>Rationale-guided filtering</h3>
+      <p>A Verifier LLM checks each chunk against the rationales, flagging factual violations, contradictions with other verified evidence, and instruction violations. Flagged chunks are discarded before generation.</p>
+    </div>
+    <div class="step">
+      <span class="step-num">Output</span>
+      <h3>Grounded, auditable generation</h3>
+      <p>When verification is enabled, only accepted evidence reaches the answer model. Selection and verification diagnostics show which rationales selected a chunk and why the verifier accepted or rejected it.</p>
+    </div>
+  </div>
+</section>
+
+<hr class="divider">
+
+<!-- DATASETS -->
+<section id="datasets">
+  <span class="section-label">Datasets</span>
+  <h2>Six research benchmarks across three domains.</h2>
+  <p class="section-lead">
+    Each dataset provides QA pairs, lengthy reference documents, and human-annotated evidence spans serving as ground truth for precision and recall evaluation.
+  </p>
+  <div class="table-scroll" tabindex="0" role="region" aria-label="Benchmark datasets">
+  <table class="dataset-table">
+    <thead>
+      <tr>
+        <th>Dataset</th>
+        <th>Domain</th>
+        <th>Documents</th>
+        <th>Avg tokens/doc</th>
+        <th>QA pairs</th>
+        <th>Description</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>ContractNLI</td>
+        <td><span class="domain-badge d-legal">Legal</span></td>
+        <td>95</td><td>10,673</td><td>946</td>
+        <td>NDA clause entailment, law experts mark exact clauses needed for reasoning</td>
+      </tr>
+      <tr>
+        <td>CUAD</td>
+        <td><span class="domain-badge d-legal">Legal</span></td>
+        <td>462</td><td>55,827</td><td>4,042</td>
+        <td>Commercial contracts, 41 clause categories annotated by legal professionals</td>
+      </tr>
+      <tr>
+        <td>MAUD</td>
+        <td><span class="domain-badge d-legal">Legal</span></td>
+        <td>150</td><td>351,476</td><td>1,676</td>
+        <td>M&amp;A merger agreements, corporate attorneys identify sections addressing acquisition terms</td>
+      </tr>
+      <tr>
+        <td>PrivacyQA</td>
+        <td><span class="domain-badge d-legal">Legal</span></td>
+        <td>7</td><td>25,266</td><td>194</td>
+        <td>Consumer app privacy policies, privacy specialists identify relevant disclosure sections</td>
+      </tr>
+      <tr>
+        <td>FinQA</td>
+        <td><span class="domain-badge d-finance">Finance</span></td>
+        <td>2,789</td><td>~700</td><td>8,281</td>
+        <td>Financial reports requiring numerical reasoning, analysts mark exact tables and figures</td>
+      </tr>
+      <tr>
+        <td>QASPER</td>
+        <td><span class="domain-badge d-academic">Academic</span></td>
+        <td>1,585</td><td>~6,500</td><td>5,000+</td>
+        <td>NLP research papers, domain scientists identify minimal sentences for accurate answers</td>
+      </tr>
+    </tbody>
+  </table>
+  </div>
+</section>
+
+<hr class="divider">
+
+<!-- RESULTS -->
+<section id="results">
+  <span class="section-label">Results</span>
+  <h2>Interpretable selection outperforms all re-ranking baselines.</h2>
+  <p class="section-lead">
+    Evaluated against standard re-ranking baselines. For fair comparison, baselines receive the same number of evidence chunks that METEORA selects on average. Adversarial defense is compared against perplexity-based filtering from Zhou et al. (2024).
+  </p>
+
+  <div class="results-numbers">
+    <div class="result-card">
+      <span class="result-val">+13.41%</span>
+      <p>Higher average recall across the six paper benchmarks</p>
+    </div>
+    <div class="result-card">
+      <span class="result-val">+21.05%</span>
+      <p>Higher precision without context expansion</p>
+    </div>
+    <div class="result-card">
+      <span class="result-val">80% less</span>
+      <p>Evidence needed to match baseline recall</p>
+    </div>
+    <div class="result-card">
+      <span class="result-val">+33.34%</span>
+      <p>Downstream generation accuracy improvement</p>
+    </div>
+    <div class="result-card">
+      <span class="result-val">4.4x</span>
+      <p>F1 gain over perplexity defense under poisoning</p>
+    </div>
+  </div>
+
+</section>
+
+<hr class="divider">
+
+<!-- CODE -->
+<section id="code">
+  <span class="section-label">Quick start</span>
+  <h2>Select evidence in your retrieval pipeline.</h2>
+  <p class="section-lead">
+    Install the package from a source checkout, then pass your retrieved passages to <code style="font-size:0.9em; color:var(--accent); font-family:var(--mono);">MeteoraReranker</code>. The example below supplies a search rationale and runs without model downloads. See the <a href="https://github.com/YashSaxena21/METEORA/blob/main/docs/api.md">API guide</a> to add generated rationales and a verifier.
+  </p>
+
+  <div class="code-tabs">
+    <div class="code-tabs-header">
+      <button class="tab-btn active" data-tab="install">Install</button>
+      <button class="tab-btn" data-tab="replace">Replace reranker</button>
+      <button class="tab-btn" data-tab="dpo">DPO training</button>
+    </div>
+
+    <div class="code-panel active" id="tab-install">
+      <div class="code-header">
+        <span>terminal</span>
+        <button class="copy-btn" data-copy="tab-install">Copy</button>
+      </div>
+      <pre><code>git clone https://github.com/YashSaxena21/METEORA.git
+cd METEORA
+python -m pip install .</code></pre>
+    </div>
+
+    <div class="code-panel" id="tab-replace">
+      <div class="code-header">
+        <span>python</span>
+        <button class="copy-btn" data-copy="tab-replace">Copy</button>
+      </div>
+      <pre><code>from meteora_rag import HashingEncoder, MeteoraReranker
+
+query = &quot;Is assignment restricted?&quot;
+documents = [
+    &quot;Assignment requires prior written consent.&quot;,
+    &quot;Invoices are due within thirty days.&quot;,
+    &quot;The agreement is governed by New York law.&quot;,
+    &quot;Confidential information must not be disclosed.&quot;,
+    &quot;Either party may terminate for material breach.&quot;,
+]
+
+reranker = MeteoraReranker(HashingEncoder())
+selected = reranker.filter(
+    query, documents, rationales=[&quot;assignment prior written consent&quot;]
+)
+print(list(selected))</code></pre>
+    </div>
+
+    <div class="code-panel" id="tab-dpo">
+      <div class="code-header">
+        <span>cli</span>
+        <button class="copy-btn" data-copy="tab-dpo">Copy</button>
+      </div>
+      <pre><code>meteora-rag dpo-prepare \
+  --input examples/data/preference_examples.json \
+  --sample-shots examples/data/sample_shots.json \
+  --output-dir outputs/dpo \
+  --domain &quot;commercial contracts&quot;
+
+# Model training requires optional dependencies and a suitable preference dataset.
+python -m pip install &quot;.[training]&quot;
+meteora-rag dpo-train \
+  --train outputs/dpo/train.jsonl \
+  --validation outputs/dpo/validation.jsonl \
+  --model TinyLlama/TinyLlama-1.1B-Chat-v1.0 \
+  --output-dir outputs/rationale-model</code></pre>
+    </div>
+  </div>
+</section>
+
+<hr class="divider">
+
+<!-- AUTHORS -->
+<section id="authors">
+  <span class="section-label">Authors</span>
+  <h2>Research team.</h2>
+
+  <div class="author-grid">
+    <a class="author-card" href="https://yashsaxena21.github.io/Portfolio/">
+      <img class="author-photo" src="assets/authors/yash-saxena.jpg" alt="Yash Saxena">
+      <span class="author-info">
+        <span class="author-name">Yash Saxena</span>
+        <span class="author-role">PhD Student</span>
+        <span class="author-org">UMBC KAI2 Lab</span>
+      </span>
+    </a>
+    <a class="author-card" href="https://padiaankur.github.io/">
+      <img class="author-photo" src="assets/authors/ankur-padia.jpg" alt="Ankur Padia">
+      <span class="author-info">
+        <span class="author-name">Ankur Padia</span>
+        <span class="author-role">Director, Data Science and ML</span>
+        <span class="author-org">Liberty Mutual Insurance</span>
+      </span>
+    </a>
+    <a class="author-card" href="https://www.linkedin.com/in/mschaudhary">
+      <img class="author-photo" src="assets/authors/mandar-chaudhary.jpg" alt="Mandar S. Chaudhary">
+      <span class="author-info">
+        <span class="author-name">Mandar S. Chaudhary</span>
+        <span class="author-role">Machine Learning Engineer</span>
+        <span class="author-org">eBay Inc.</span>
+      </span>
+    </a>
+    <a class="author-card" href="https://kalpagunaratna.github.io/">
+      <img class="author-photo" src="assets/authors/kalpa-gunaratna.jpg" alt="Kalpa Gunaratna">
+      <span class="author-info">
+        <span class="author-name">Kalpa Gunaratna</span>
+        <span class="author-role">Staff Research Scientist</span>
+        <span class="author-org">Samsung Research America</span>
+      </span>
+    </a>
+    <a class="author-card" href="https://www.linkedin.com/in/srinivasan-parthasarathy-5703761/">
+      <img class="author-photo" src="assets/authors/srinivasan-parthasarathy.jpg" alt="Srinivasan Parthasarathy">
+      <span class="author-info">
+        <span class="author-name">Srinivasan Parthasarathy</span>
+        <span class="author-role">Professor</span>
+        <span class="author-org">Ohio State University</span>
+      </span>
+    </a>
+    <a class="author-card" href="https://manasgaur.github.io/">
+      <img class="author-photo" src="assets/authors/manas-gaur.jpg" alt="Manas Gaur">
+      <span class="author-info">
+        <span class="author-name">Manas Gaur</span>
+        <span class="author-role">Assistant Professor</span>
+        <span class="author-org">UMBC</span>
+      </span>
+    </a>
+  </div>
+</section>
+
+<hr class="divider">
+
+<!-- CITATION + LINKS -->
+<section id="cite">
+  <span class="section-label">Citation</span>
+  <h2>Cite this work.</h2>
+
+  <div class="citation-box" style="margin-bottom: 3rem;">
+    <div class="citation-header">
+      <span>BibTeX</span>
+      <button class="copy-btn" id="cite-copy-btn">Copy</button>
+    </div>
+    <pre id="bibtex-block"><code>@inproceedings{saxena2026meteora,
+  title     = {Ranking Free {RAG}: Replacing Re-ranking with Selection
+               in {RAG} for Sensitive Domains},
+  author    = {Saxena, Yash and Padia, Ankur and Chaudhary, Mandar S.
+               and Gunaratna, Kalpa and Parthasarathy, Srinivasan
+               and Gaur, Manas},
+  booktitle = {Proceedings of the 43rd International Conference
+               on Machine Learning},
+  series    = {Proceedings of Machine Learning Research},
+  year      = {2026},
+}</code></pre>
+  </div>
+
+  <span class="section-label" style="margin-top:2rem; display:block;">Resources</span>
+  <div class="links-grid">
+    <a class="link-card" href="https://github.com/YashSaxena21/METEORA">
+      <span class="link-type">Code</span>
+      <span class="link-title">GitHub repository</span>
+      <span class="link-desc">Package source, CLI, examples, and experiment scripts.</span>
+    </a>
+    <a class="link-card" href="https://arxiv.org/abs/2505.16014">
+      <span class="link-type">Paper</span>
+      <span class="link-title">Paper page</span>
+      <span class="link-desc">Full paper and PDF.</span>
+    </a>
+    <a class="link-card" href="https://icml.cc/Conferences/2026/CallForPapers">
+      <span class="link-type">Venue</span>
+      <span class="link-title">ICML 2026</span>
+      <span class="link-desc">Seoul, South Korea. July 6 to 11, 2026.</span>
+    </a>
+    <a class="link-card" href="https://yashsaxena21.github.io/IMRNNs-web/">
+      <span class="link-type">Related Project</span>
+      <span class="link-title">IMRNNs</span>
+      <span class="link-desc">Want to make retrieval interpretable? Visit the IMRNNs website.</span>
+    </a>
+  </div>
+</section>
+
+<hr class="divider">
+
+<footer>
+  <a class="footer-brand" href="#top">METEORA</a>
+  <div class="footer-links">
+    <a href="https://arxiv.org/abs/2505.16014">Paper</a>
+    <a href="https://github.com/YashSaxena21/METEORA">GitHub</a>
+    <a href="https://icml.cc/Conferences/2026/CallForPapers">ICML 2026</a>
+    <a href="https://yashsaxena21.github.io/IMRNNs-web/">IMRNNs</a>
+  </div>
+</footer>
+
+<script>
+  document.querySelectorAll('.tab-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const tab = btn.dataset.tab;
+      document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+      document.querySelectorAll('.code-panel').forEach(p => p.classList.remove('active'));
+      btn.classList.add('active');
+      document.getElementById('tab-' + tab).classList.add('active');
+    });
+  });
+
+  async function copyCode(button, element) {
+    if (!element) return;
+    const original = button.textContent;
+    try {
+      await navigator.clipboard.writeText(element.textContent);
+      button.textContent = 'Copied';
+    } catch {
+      const selection = window.getSelection();
+      const range = document.createRange();
+      range.selectNodeContents(element);
+      selection.removeAllRanges();
+      selection.addRange(range);
+      button.textContent = 'Text selected';
+    }
+    setTimeout(() => button.textContent = original, 1500);
+  }
+
+  document.querySelectorAll('.copy-btn[data-copy]').forEach(button => {
+    button.addEventListener('click', () => {
+      const panel = document.getElementById(button.dataset.copy);
+      copyCode(button, panel ? panel.querySelector('pre') : null);
+    });
+  });
+
+  const citeButton = document.getElementById('cite-copy-btn');
+  if (citeButton) {
+    citeButton.addEventListener('click', () => {
+      copyCode(citeButton, document.getElementById('bibtex-block'));
+    });
+  }
+</script>
+</body>
+</html>

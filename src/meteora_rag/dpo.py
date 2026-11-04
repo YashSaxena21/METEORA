@@ -10,7 +10,6 @@ from .prompts import SampleShot, format_sample_shots
 from .rationales import coerce_rationales
 from .types import RationaleLike
 
-
 PREFERRED_RATIONALE_KEYS = (
     "effective_rationales",
     "preferred_rationales",
@@ -32,7 +31,7 @@ IRRELEVANT_EVIDENCE_KEYS = ("irrelevant_evidence", "negative_evidence", "rejecte
 
 @dataclass(frozen=True)
 class DPODataConfig:
-    """Preference-data settings for the METEORA DPO rationale generator."""
+    """Preference-data settings for Direct Preference Optimization of rationales."""
 
     sample_shots: Sequence[SampleShot]
     domain: str = "legal, financial, scientific, or policy"
@@ -44,7 +43,7 @@ class DPODataConfig:
 
 @dataclass(frozen=True)
 class DPOSplitConfig:
-    """Deterministic split settings matching the paper's 80/10/10 setup by default."""
+    """Reproducible train/validation/test splits; defaults to 80/10/10 percent."""
 
     train_ratio: float = 0.8
     validation_ratio: float = 0.1
@@ -55,7 +54,7 @@ class DPOSplitConfig:
 
 @dataclass(frozen=True)
 class DPOTrainingConfig:
-    """Paper-aligned defaults for training the METEORA rationale generator with DPO."""
+    """Hyperparameters for Direct Preference Optimization of a rationale model."""
 
     model_name_or_path: str
     output_dir: str
@@ -135,7 +134,7 @@ def build_dpo_prompt(
     if evidence:
         evidence_block = f"""
 
-Oracle evidence available during training:
+Oracle evidence (labeled supporting passages, available during training only):
 {evidence}
 """
     sample_block = format_sample_shots(sample_shots)
@@ -197,9 +196,7 @@ def format_rationale_completion(
         flags = ""
         if include_flag_instructions and rationale.flag_instructions:
             flags = f" Flag Instructions: {rationale.flag_instructions}"
-        blocks.append(
-            f"<rationale_{index}>{label} {rationale.text}{flags}</rationale_{index}>"
-        )
+        blocks.append(f"<rationale_{index}>{label} {rationale.text}{flags}</rationale_{index}>")
     return "\n".join(blocks)
 
 
@@ -223,7 +220,9 @@ def build_dpo_preference_records(
         if not query or not preferred or not rejected:
             if data_config.skip_missing:
                 continue
-            raise ValueError(f"Example at position {position} is missing query or preference rationales.")
+            raise ValueError(
+                f"Example at position {position} is missing query or preference rationales."
+            )
 
         evidence = _extract_oracle_evidence(example)
         rejected_evidence = _extract_rejected_evidence(example)
@@ -294,19 +293,19 @@ def create_hf_dataset(records: Sequence[Union[DPOPreferenceRecord, Mapping[str, 
     try:
         from datasets import Dataset
     except ImportError as exc:
-        raise ImportError("Install METEORA with the training extra: pip install -e '.[training]'") from exc
+        raise ImportError('Install training support: pip install "meteora-rag[training]"') from exc
     return Dataset.from_list([_record_to_trl_dict(record) for record in records])
 
 
 def create_hf_dataset_dict(
-    splits: Mapping[str, Sequence[Union[DPOPreferenceRecord, Mapping[str, Any]]]]
+    splits: Mapping[str, Sequence[Union[DPOPreferenceRecord, Mapping[str, Any]]]],
 ):
     """Create a DatasetDict from split DPO records."""
 
     try:
         from datasets import DatasetDict
     except ImportError as exc:
-        raise ImportError("Install METEORA with the training extra: pip install -e '.[training]'") from exc
+        raise ImportError('Install training support: pip install "meteora-rag[training]"') from exc
     return DatasetDict({name: create_hf_dataset(records) for name, records in splits.items()})
 
 
@@ -385,7 +384,7 @@ def get_print_logs_callback():
     try:
         from transformers import TrainerCallback
     except ImportError as exc:
-        raise ImportError("Install METEORA with the hf extra: pip install -e '.[hf]'") from exc
+        raise ImportError('Install generation support: pip install "meteora-rag[hf]"') from exc
 
     class PrintLogsCallback(TrainerCallback):
         def on_log(self, args, state, control, logs=None, **kwargs):  # noqa: D401
@@ -407,14 +406,15 @@ def train_dpo_rationale_generator(
 ):
     """Fine-tune a rationale generator with TRL DPO using METEORA preference records."""
 
+    if not train_records:
+        raise ValueError("Training requires at least one prompt/chosen/rejected preference record.")
+
     try:
         import torch
         from transformers import AutoModelForCausalLM, AutoTokenizer
         from trl import DPOConfig, DPOTrainer
     except ImportError as exc:
-        raise ImportError(
-            "Install METEORA with Hugging Face training extras: pip install -e '.[hf,training]'"
-        ) from exc
+        raise ImportError('Install training support: pip install "meteora-rag[training]"') from exc
 
     tokenizer = tokenizer or AutoTokenizer.from_pretrained(
         config.model_name_or_path,
@@ -527,7 +527,9 @@ def _save_trained_model(trainer: Any, tokenizer: Any, config: DPOTrainingConfig)
     elif hasattr(trainer, "model") and hasattr(trainer.model, "save_pretrained"):
         trainer.model.save_pretrained(str(output_dir))
     else:
-        raise TypeError("Trainer does not expose save_model and model does not expose save_pretrained.")
+        raise TypeError(
+            "Trainer does not expose save_model and model does not expose save_pretrained."
+        )
 
     if hasattr(trainer, "save_state"):
         trainer.save_state()
@@ -689,7 +691,9 @@ def _texts_for_indices(chunks: Any, indices: Sequence[int]) -> Sequence[str]:
         if isinstance(chunk, Mapping):
             text = chunk.get("text") or chunk.get("content") or chunk.get("page_content")
         else:
-            text = getattr(chunk, "text", None) or getattr(chunk, "page_content", None) or str(chunk)
+            text = (
+                getattr(chunk, "text", None) or getattr(chunk, "page_content", None) or str(chunk)
+            )
         if text:
             texts.append(str(text))
     return tuple(texts)

@@ -1,18 +1,18 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from inspect import signature
 from typing import Any, Callable, Iterable, Mapping, Optional, Protocol, Sequence, Union
 
 from .embeddings import EncoderLike
 from .rationales import coerce_rationales
 from .selector import MeteoraConfig, MeteoraSelector
-from .types import Chunk, ChunkLike, Rationale, RationaleLike, SelectionResult
+from .types import Chunk, Rationale, RationaleLike, SelectionResult
 from .verifier import MeteoraVerifier, VerificationResult, VerifiedSelection, VerifierModelLike
 
 
 class RationaleGenerator(Protocol):
-    def __call__(self, query: str, documents: Sequence[str]) -> Any:
-        ...
+    def __call__(self, query: str, documents: Sequence[str]) -> Any: ...
 
 
 RationaleGeneratorLike = Union[RationaleGenerator, Callable[..., Any]]
@@ -81,11 +81,16 @@ class MeteoraRerankTrace:
 
 
 class MeteoraReranker:
-    """Drop-in facade for replacing a conventional reranker in RAG pipelines.
+    """Select evidence through a reranker-style ``(query, documents)`` interface.
 
-    `rerank(query, documents)` returns METEORA-selected documents as scored result
-    objects. No fixed top-k is applied unless `top_k` is explicitly passed for
-    compatibility with an existing pipeline.
+    ``filter()`` returns the original document objects; ``rerank()`` returns
+    scored result objects; ``trace()`` also exposes selection diagnostics.
+    Supply rationales per call or configure a rationale generator. By default,
+    the query itself is the fallback rationale when neither is provided.
+
+    Verification runs only when a verifier is configured. Neighbor expansion
+    defaults to zero for independently retrieved passages. ``top_k`` optionally
+    caps the final results after adaptive selection and verification.
     """
 
     def __init__(
@@ -137,7 +142,7 @@ class MeteoraReranker:
         verify: Optional[bool] = None,
         order: Optional[str] = None,
     ) -> Sequence[Any]:
-        """Return only the selected original documents for pipeline drop-in use."""
+        """Return a tuple of selected original documents in the requested order."""
 
         return tuple(
             result.document
@@ -178,9 +183,7 @@ class MeteoraReranker:
             if self.verifier is None:
                 raise ValueError("verify=True requires a verifier.")
             verification = self.verifier.verify_selection(query, selection)
-            verification_by_chunk_id = {
-                id(result.chunk): result for result in verification.results
-            }
+            verification_by_chunk_id = {id(result.chunk): result for result in verification.results}
             accepted_chunk_ids = {
                 id(result.chunk) for result in verification.results if result.accepted
             }
@@ -314,24 +317,48 @@ def _order_results(items: Sequence[RerankResult], order: str) -> Sequence[Rerank
     raise ValueError("order must be one of: 'score', 'document', 'input', or 'context'.")
 
 
-def _call_rationale_generator(generator: RationaleGeneratorLike, query: str, documents: Sequence[str]) -> Any:
+def _call_rationale_generator(
+    generator: RationaleGeneratorLike, query: str, documents: Sequence[str]
+) -> Any:
     if callable(generator):
+        method = generator
+        candidates = [
+            ((query, documents), {}),
+            ((), {"query": query, "documents": documents}),
+            ((query,), {}),
+        ]
+    else:
+        method = next(
+            (
+                getattr(generator, name)
+                for name in ("generate", "complete", "invoke")
+                if callable(getattr(generator, name, None))
+            ),
+            None,
+        )
+        if method is None:
+            raise TypeError(
+                "Rationale generator must be callable or expose generate, complete, or invoke."
+            )
+        candidates = [((), {"query": query, "documents": documents}), ((query,), {})]
+
+    try:
+        method_signature = signature(method)
+    except (TypeError, ValueError):
+        args, kwargs = candidates[-1]
+        return method(*args, **kwargs)
+    for args, kwargs in candidates:
         try:
-            return generator(query, documents)
+            method_signature.bind(*args, **kwargs)
         except TypeError:
-            return generator(query)
-    for method_name in ("generate", "complete", "invoke"):
-        method = getattr(generator, method_name, None)
-        if method is not None:
-            try:
-                return method(query=query, documents=documents)
-            except TypeError:
-                return method(query)
-    raise TypeError("Rationale generator must be callable or expose generate, complete, or invoke.")
+            continue
+        # Backend TypeErrors must propagate instead of triggering a second model call.
+        return method(*args, **kwargs)
+    raise TypeError("Rationale generator must accept a query, optionally with documents.")
 
 
 def _coerce_verifier(
-    verifier: Optional[Union[MeteoraVerifier, VerifierModelLike]]
+    verifier: Optional[Union[MeteoraVerifier, VerifierModelLike]],
 ) -> Optional[MeteoraVerifier]:
     if verifier is None:
         return None

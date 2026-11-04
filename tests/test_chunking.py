@@ -1,6 +1,6 @@
 import unittest
 
-from meteora import chunk_text, find_spanning_chunks
+from meteora_rag import chunk_text, find_spanning_chunks
 
 
 class ChunkingTest(unittest.TestCase):

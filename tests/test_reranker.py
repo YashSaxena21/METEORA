@@ -1,6 +1,6 @@
 import unittest
 
-from meteora import HashingEncoder, MeteoraReranker
+from meteora_rag import HashingEncoder, MeteoraReranker
 
 
 class LangChainLikeDocument:
@@ -10,6 +10,29 @@ class LangChainLikeDocument:
 
 
 class RerankerTest(unittest.TestCase):
+    def test_one_argument_rationale_generator(self):
+        calls = []
+
+        def generator(query):
+            calls.append(query)
+            return "assignment consent"
+
+        reranker = MeteoraReranker(HashingEncoder(), rationale_generator=generator)
+        reranker.rerank("assignment query", ["Assignment requires consent."])
+        self.assertEqual(calls, ["assignment query"])
+
+    def test_backend_type_error_does_not_retry_generation(self):
+        calls = []
+
+        def generator(query, documents=None):
+            calls.append(query)
+            raise TypeError("Backend failed while handling its response")
+
+        reranker = MeteoraReranker(HashingEncoder(), rationale_generator=generator)
+        with self.assertRaisesRegex(TypeError, "Backend failed"):
+            reranker.rerank("assignment query", ["Assignment requires consent."])
+        self.assertEqual(calls, ["assignment query"])
+
     def test_rerank_returns_selected_result_objects(self):
         reranker = MeteoraReranker(HashingEncoder(), fallback_to_query_rationale=True)
 

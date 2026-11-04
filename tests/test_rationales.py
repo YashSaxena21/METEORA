@@ -1,7 +1,7 @@
 import unittest
 
-from meteora import extract_flag_instructions, parse_rationale_texts, parse_rationales
-from meteora.rationales import coerce_rationales
+from meteora_rag import extract_flag_instructions, parse_rationale_texts, parse_rationales
+from meteora_rag.rationales import coerce_rationales
 
 
 class RationalesTest(unittest.TestCase):
@@ -36,10 +36,13 @@ Query: What licenses are granted?
             "Look for assignment restrictions.\nLook for consent requirements."
         )
 
-        self.assertEqual([rationale.text for rationale in rationales], [
-            "Look for assignment restrictions.",
-            "Look for consent requirements.",
-        ])
+        self.assertEqual(
+            [rationale.text for rationale in rationales],
+            [
+                "Look for assignment restrictions.",
+                "Look for consent requirements.",
+            ],
+        )
 
 
 if __name__ == "__main__":

@@ -34,14 +34,16 @@ class MeteoraConfig:
 class MeteoraSelector:
     """Rationale-driven, rank-free evidence selector.
 
-    The selector implements the three-stage ECSE routine used by METEORA:
+    The Evidence Chunk Selection Engine (ECSE) uses three stages:
 
     1. Pair each rationale to its best matching chunk, allowing convergence.
     2. Pool rationale embeddings and select chunks up to a statistical elbow.
     3. Expand by neighboring context windows.
     """
 
-    def __init__(self, encoder: EncoderLike, config: Optional[MeteoraConfig] = None, **kwargs) -> None:
+    def __init__(
+        self, encoder: EncoderLike, config: Optional[MeteoraConfig] = None, **kwargs
+    ) -> None:
         if config is not None and kwargs:
             raise ValueError("Pass either a MeteoraConfig or keyword config values, not both.")
         self.encoder = encoder
@@ -54,13 +56,22 @@ class MeteoraSelector:
         chunks: Iterable[ChunkLike],
         rationales: Union[Iterable[RationaleLike], str],
     ) -> SelectionResult:
+        """Select evidence from ordered chunks using supplied search rationales.
+
+        Accepts strings, ``Chunk`` objects, or mappings with a ``text`` field.
+        Expansion uses neighboring positions in this input sequence. For
+        unrelated documents, set ``expansion_window=0`` or select each document
+        separately. No model generates rationales within this method.
+        """
         normalized_chunks = tuple(normalize_chunks(chunks))
         normalized_rationales = tuple(coerce_rationales(rationales))
 
         if not normalized_chunks:
             return _empty_result(normalized_rationales)
         if not normalized_rationales:
-            return _result_from_indices(normalized_chunks, normalized_rationales, set(), [], [], None, {})
+            return _result_from_indices(
+                normalized_chunks, normalized_rationales, set(), [], [], None, {}
+            )
 
         chunk_embeddings = encode_texts(self.encoder, [chunk.text for chunk in normalized_chunks])
         rationale_embeddings = encode_texts(
@@ -200,7 +211,9 @@ def _empty_result(rationales: Sequence[Rationale]) -> SelectionResult:
         pooled_scores=[],
         rationale_contributions={},
     )
-    return SelectionResult(selected_indices=[], selected_chunks=[], rationales=rationales, details=details)
+    return SelectionResult(
+        selected_indices=[], selected_chunks=[], rationales=rationales, details=details
+    )
 
 
 def _result_from_indices(
@@ -243,7 +256,9 @@ def _result_from_positions(
     contributions,
 ) -> SelectionResult:
     selected_indices = sorted(chunks[position].index for position in selected_positions)
-    selected_chunks = [chunk for position, chunk in enumerate(chunks) if position in selected_positions]
+    selected_chunks = [
+        chunk for position, chunk in enumerate(chunks) if position in selected_positions
+    ]
     details = SelectionDetails(
         pairing_indices=sorted(chunks[position].index for position in pairing_positions),
         pooled_indices=sorted(chunks[position].index for position in pooled_positions),

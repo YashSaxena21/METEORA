@@ -3,7 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from meteora import (
+from meteora_rag import (
     DPODataConfig,
     DPOSplitConfig,
     DPOTrainingConfig,
@@ -13,8 +13,12 @@ from meteora import (
     format_rationale_completion,
     split_dpo_records,
 )
-from meteora.dpo import _create_dpo_config, _save_trained_model, read_preference_jsonl, write_preference_jsonl
-
+from meteora_rag.dpo import (
+    _create_dpo_config,
+    _save_trained_model,
+    read_preference_jsonl,
+    write_preference_jsonl,
+)
 
 SAMPLE_SHOTS = [
     {
@@ -88,7 +92,10 @@ class DPOTest(unittest.TestCase):
             [
                 {
                     "question": "Is assignment restricted?",
-                    "chunks": [{"text": "Assignment requires consent."}, {"text": "Invoice terms."}],
+                    "chunks": [
+                        {"text": "Assignment requires consent."},
+                        {"text": "Invoice terms."},
+                    ],
                     "gold_chunks": [{"index": 0}],
                     "rationale_candidates": [
                         {"text": "Search for assignment consent.", "selected_chunks": [0]},
@@ -112,13 +119,20 @@ class DPOTest(unittest.TestCase):
             }
             for i in range(10)
         ]
-        records = build_dpo_preference_records(examples, config=DPODataConfig(sample_shots=SAMPLE_SHOTS))
+        records = build_dpo_preference_records(
+            examples, config=DPODataConfig(sample_shots=SAMPLE_SHOTS)
+        )
 
         first = split_dpo_records(records, DPOSplitConfig(seed=7))
         second = split_dpo_records(records, DPOSplitConfig(seed=7))
 
-        self.assertEqual([record.query for record in first["train"]], [record.query for record in second["train"]])
-        self.assertEqual((len(first["train"]), len(first["validation"]), len(first["test"])), (8, 1, 1))
+        self.assertEqual(
+            [record.query for record in first["train"]],
+            [record.query for record in second["train"]],
+        )
+        self.assertEqual(
+            (len(first["train"]), len(first["validation"]), len(first["test"])), (8, 1, 1)
+        )
 
     def test_single_record_split_keeps_training_row(self):
         records = build_dpo_preference_records(
@@ -128,7 +142,9 @@ class DPOTest(unittest.TestCase):
 
         splits = split_dpo_records(records)
 
-        self.assertEqual((len(splits["train"]), len(splits["validation"]), len(splits["test"])), (1, 0, 0))
+        self.assertEqual(
+            (len(splits["train"]), len(splits["validation"]), len(splits["test"])), (1, 0, 0)
+        )
 
     def test_jsonl_round_trip(self):
         records = build_dpo_preference_records(

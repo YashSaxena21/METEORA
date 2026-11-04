@@ -7,7 +7,7 @@ from transformers import AutoTokenizer, AutoModelForCausalLM
 from sentence_transformers import SentenceTransformer, util
 from datasets import Dataset
 from trl import DPOTrainer, DPOConfig
-from meteora.dpo import build_dpo_prompt, format_rationale_completion, get_print_logs_callback
+from meteora_rag.dpo import build_dpo_prompt, format_rationale_completion, get_print_logs_callback
 
 # =======================
 # USER CONFIGURATION

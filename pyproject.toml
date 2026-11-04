@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=68", "wheel"]
+requires = ["setuptools>=77", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -8,8 +8,15 @@ version = "0.1.0"
 description = "Rank-free, rationale-driven evidence selection for retrieval-augmented generation."
 readme = "README.md"
 requires-python = ">=3.9"
+license = "CC-BY-4.0"
+license-files = ["LICENSE", "ATTRIBUTION.md"]
 authors = [
-  {name = "Yash Saxena"}
+  {name = "Yash Saxena"},
+  {name = "Ankur Padia"},
+  {name = "Mandar S. Chaudhary"},
+  {name = "Kalpa Gunaratna"},
+  {name = "Srinivasan Parthasarathy"},
+  {name = "Manas Gaur"},
 ]
 keywords = ["rag", "retrieval", "evidence-selection", "llm", "ranking-free"]
 classifiers = [
@@ -23,6 +30,7 @@ classifiers = [
   "Programming Language :: Python :: 3.11",
   "Programming Language :: Python :: 3.12",
   "Programming Language :: Python :: 3.13",
+  "Operating System :: OS Independent",
   "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
 dependencies = [
@@ -39,28 +47,41 @@ hf = [
   "transformers>=4.40",
 ]
 training = [
+  "accelerate>=0.30",
   "datasets>=2.19",
   "peft>=0.10",
+  "torch>=2.2",
+  "transformers>=4.40",
   "trl>=0.9",
 ]
 dev = [
   "build>=1.2",
   "pytest>=8.0",
   "ruff>=0.5",
+  "twine>=5.0",
 ]
 
 [project.urls]
+Homepage = "https://github.com/YashSaxena21/METEORA"
+Documentation = "https://github.com/YashSaxena21/METEORA#readme"
 Repository = "https://github.com/YashSaxena21/METEORA"
+Issues = "https://github.com/YashSaxena21/METEORA/issues"
+Paper = "https://arxiv.org/abs/2505.16014"
 
 [project.scripts]
-meteora = "meteora.cli:main"
+meteora-rag = "meteora_rag.cli:main"
 
 [tool.setuptools]
 package-dir = {"" = "src"}
 
 [tool.setuptools.packages.find]
 where = ["src"]
+include = ["meteora_rag", "meteora_rag.*"]
+namespaces = false
 
 [tool.ruff]
 line-length = 100
 target-version = "py39"
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F", "I"]

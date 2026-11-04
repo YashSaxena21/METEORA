@@ -1,10 +1,6 @@
 -e .
 
-# Optional production encoder support:
-# pip install -e ".[sentence-transformers]"
-#
-# Optional Hugging Face rationale-generation/training stack:
-# pip install -e ".[hf,training]"
-#
-# The original pinned research environment is preserved in:
-# requirements-experiments.txt
+# Optional semantic embeddings: pip install -e ".[sentence-transformers]"
+# Optional generation: pip install -e ".[hf]"
+# Optional model training: pip install -e ".[training]"
+# Development and release tools: pip install -e ".[dev]"

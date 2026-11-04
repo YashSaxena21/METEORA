@@ -32,15 +32,13 @@ def create_adversarial_prompt(query, span_text):
 2. Create five corpuses (~100 words each) that might mislead a model into selecting the incorrect answer.
 3. Return all parts in a JSON-formatted string with keys: "incorrect_answer", "corpus1", "corpus2", "corpus3", "corpus4", and "corpus5".
 
-[EXAMPLES OMITTED FOR BREVITY]
-
 Query: [query]
 Correct answer: [answer]"""
     
     return adv_prompt.replace("[query]", query).replace("[answer]", span_text)
 
 def extract_json_from_response(response):
-    """Extract JSON from LLM response with improved handling of nested content."""
+    """Extract the incorrect answer and poisoned passages from a model response."""
     # Find content between curly braces
     json_pattern = r'\{[\s\S]*?\}'
     matches = re.findall(json_pattern, response)

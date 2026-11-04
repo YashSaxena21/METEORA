@@ -1,29 +1,23 @@
-from meteora import HashingEncoder, MeteoraReranker
+"""Use supplied rationales to filter original document objects in a RAG pipeline."""
+
+import json
+from pathlib import Path
+
+from meteora_rag import HashingEncoder, MeteoraReranker
 
 
-documents = [
-    {"text": "The agreement may not be assigned without prior written consent.", "id": "a"},
-    {"text": "Invoices are due within thirty days after receipt.", "id": "b"},
-    {"text": "The agreement binds successors and permitted assigns.", "id": "c"},
-]
+def main():
+    data = Path(__file__).with_name("data")
+    documents = json.loads((data / "chunks.json").read_text(encoding="utf-8"))
+    rationales = (data / "rationales.txt").read_text(encoding="utf-8")
+    reranker = MeteoraReranker(HashingEncoder())
+    selected = reranker.filter(
+        "Is assignment restricted?", documents, rationales=rationales, order="document"
+    )
+    print("Selected document IDs:", [document["id"] for document in selected])
+    for document in selected:
+        print(document["text"])
 
 
-def rationale_generator(query, docs):
-    return """
-<rationale_1>[Consent restriction] Search assigned written consent.</rationale_1>
-<rationale_2>[Successors and assigns] Search successors permitted assigns.</rationale_2>
-"""
-
-
-reranker = MeteoraReranker(
-    HashingEncoder(),
-    rationale_generator=rationale_generator,
-)
-
-selected_documents = reranker.filter(
-    "Is assignment restricted?",
-    documents,
-    order="document",
-)
-
-print("Selected document ids:", [document["id"] for document in selected_documents])
+if __name__ == "__main__":
+    main()

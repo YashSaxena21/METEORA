@@ -1,21 +1,19 @@
-from meteora import HashingEncoder, MeteoraSelector, parse_rationales
+"""Select evidence from supplied rationales without downloading model weights."""
+
+import json
+from pathlib import Path
+
+from meteora_rag import HashingEncoder, MeteoraSelector, parse_rationales
 
 
-chunks = [
-    "The contract may not be assigned without prior written consent.",
-    "The agreement binds successors and permitted assigns.",
-    "Invoices are due within thirty days after receipt.",
-    "Either party may terminate after a change of control event.",
-    "The agreement is governed by New York law.",
-]
+def main():
+    data = Path(__file__).with_name("data")
+    chunks = json.loads((data / "chunks.json").read_text(encoding="utf-8"))
+    rationales = parse_rationales((data / "rationales.txt").read_text(encoding="utf-8"))
+    selector = MeteoraSelector(HashingEncoder(), expansion_window=0)
+    result = selector.select(chunks, rationales)
+    print(json.dumps(result.to_dict(), indent=2))
 
-response = """
-Query: Is assignment restricted?
-<rationale_1>[Assignment restriction] Look for language requiring consent before assigning rights or obligations.</rationale_1>
-<rationale_2>[Successors and assigns] Search assignment, successors, assigns, or transfer limits.</rationale_2>
-"""
 
-selector = MeteoraSelector(HashingEncoder(), expansion_window=0)
-result = selector.select(chunks, parse_rationales(response))
-
-print(result.to_dict())
+if __name__ == "__main__":
+    main()

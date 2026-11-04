@@ -45,9 +45,7 @@ def parse_rationales(response: str, *, split_plain_text: bool = False) -> List[R
         if key in seen:
             continue
         seen.add(key)
-        rationales.append(
-            Rationale(text=body, index=index, label=label, flag_instructions=flags)
-        )
+        rationales.append(Rationale(text=body, index=index, label=label, flag_instructions=flags))
 
     rationales.sort(key=lambda rationale: rationale.index)
     return rationales

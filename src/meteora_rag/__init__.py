@@ -1,4 +1,4 @@
-"""METEORA: rank-free, rationale-driven evidence selection for RAG."""
+"""METEORA: rationale-driven evidence selection for retrieval-augmented generation."""
 
 from .chunking import chunk_text, chunk_texts, find_spanning_chunks
 from .dpo import (
@@ -26,7 +26,7 @@ from .evaluation import SelectionMetrics, precision_recall_f1
 from .generation import HFRationaleGenerator, HFRationaleGeneratorConfig
 from .prompts import SampleShot, build_rationale_prompt, build_verifier_prompt, format_sample_shots
 from .rationales import extract_flag_instructions, parse_rationale_texts, parse_rationales
-from .reranker import MeteoraRerankTrace, MeteoraReranker, RerankResult
+from .reranker import MeteoraReranker, MeteoraRerankTrace, RerankResult
 from .selector import MeteoraConfig, MeteoraSelector, statistical_elbow
 from .types import Chunk, ChunkScore, Rationale, RationaleMatch, SelectionDetails, SelectionResult
 from .verifier import (

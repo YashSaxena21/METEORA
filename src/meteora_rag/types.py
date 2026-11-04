@@ -6,7 +6,10 @@ from typing import Any, Dict, Iterable, Mapping, Optional, Sequence, Union
 
 @dataclass(frozen=True)
 class Chunk:
-    """A document chunk plus optional source offsets."""
+    """An evidence passage with an index, metadata, and optional character offsets.
+
+    Offsets refer to the original source text; ``end_pos`` is exclusive.
+    """
 
     text: str
     index: int
@@ -27,7 +30,7 @@ class Chunk:
 
 @dataclass(frozen=True)
 class Rationale:
-    """A generated search rationale used to select evidence."""
+    """A search instruction and optional rejection rule used to select evidence."""
 
     text: str
     index: int
@@ -45,6 +48,8 @@ class Rationale:
 
 @dataclass(frozen=True)
 class RationaleMatch:
+    """The best chunk match for one rationale, including cosine similarity."""
+
     rationale_index: int
     chunk_index: int
     score: float
@@ -59,6 +64,8 @@ class RationaleMatch:
 
 @dataclass(frozen=True)
 class ChunkScore:
+    """A chunk's similarity to the pooled rationale embedding."""
+
     chunk_index: int
     score: float
 
@@ -68,6 +75,8 @@ class ChunkScore:
 
 @dataclass(frozen=True)
 class SelectionDetails:
+    """Chunk indices and scores from pairing, pooling, and neighboring expansion."""
+
     pairing_indices: Sequence[int]
     pooled_indices: Sequence[int]
     expansion_indices: Sequence[int]
@@ -97,6 +106,8 @@ class SelectionDetails:
 
 @dataclass(frozen=True)
 class SelectionResult:
+    """Selected evidence and stage diagnostics before optional verification."""
+
     selected_indices: Sequence[int]
     selected_chunks: Sequence[Chunk]
     rationales: Sequence[Rationale]

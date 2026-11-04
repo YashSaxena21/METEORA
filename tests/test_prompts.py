@@ -1,7 +1,6 @@
 import unittest
 
-from meteora import build_rationale_prompt, format_sample_shots
-
+from meteora_rag import build_rationale_prompt, format_sample_shots
 
 SAMPLE_SHOTS = [
     {
@@ -12,6 +11,25 @@ SAMPLE_SHOTS = [
 
 
 class PromptTest(unittest.TestCase):
+    def test_structured_sample_shots_preserve_flag_instructions(self):
+        prompt = build_rationale_prompt(
+            "Is assignment restricted?",
+            sample_shots=[
+                {
+                    "query": "Can rights be transferred?",
+                    "rationales": [
+                        {
+                            "text": "Search for consent.",
+                            "flag_instructions": "Reject reversed permissions.",
+                        }
+                    ],
+                }
+            ],
+            include_flag_instructions=True,
+        )
+        self.assertIn("Flag Instructions: Reject reversed permissions.</rationale_1>", prompt)
+        self.assertIn("Inside each rationale block", prompt)
+
     def test_build_rationale_prompt_requires_sample_shots(self):
         with self.assertRaises(TypeError):
             build_rationale_prompt("Is assignment restricted?")

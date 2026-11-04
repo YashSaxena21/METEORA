@@ -1,7 +1,7 @@
 import json
 import unittest
 
-from meteora import (
+from meteora_rag import (
     Chunk,
     HashingEncoder,
     MeteoraSelector,
@@ -11,6 +11,32 @@ from meteora import (
 
 
 class VerifierTest(unittest.TestCase):
+    def test_incomplete_or_invalid_decisions_fail_closed(self):
+        responses = [
+            {},
+            {"reason": "Looks fine"},
+            {"flagged": False},
+            {"relevant": True, "flagged": "unknown"},
+            {"relevant": None, "flagged": False},
+            {"relevant": 7, "flagged": False},
+            {"generated_text": '{"relevant": true, "flagged": false}'},
+        ]
+        for response in responses:
+            with self.subTest(response=response):
+                result = parse_verifier_response(response, chunk=Chunk("evidence", 0))
+                self.assertFalse(result.accepted)
+                self.assertEqual(result.flag_types, ("PARSE_ERROR",))
+
+    def test_fail_open_requires_an_explicit_setting(self):
+        result = parse_verifier_response({}, chunk=Chunk("evidence", 0), fail_closed=False)
+        self.assertTrue(result.accepted)
+
+    def test_text_boolean_decisions_are_supported(self):
+        result = parse_verifier_response(
+            "relevant: yes\nflagged: no\nreason: Supports the query.", chunk=Chunk("evidence", 0)
+        )
+        self.assertTrue(result.accepted)
+
     def test_parse_json_verifier_response(self):
         chunk = Chunk(text="Evidence text", index=3)
 
@@ -64,7 +90,11 @@ class VerifierTest(unittest.TestCase):
         verifier = MeteoraVerifier(fake_model)
         verified = verifier.verify_chunks(
             query="Is assignment restricted?",
-            chunks=["Assignment requires consent.", "Assignment is unrestricted.", "Invoice terms."],
+            chunks=[
+                "Assignment requires consent.",
+                "Assignment is unrestricted.",
+                "Invoice terms.",
+            ],
             rationales=["Look for assignment restrictions."],
         )
 

@@ -629,7 +629,7 @@ def find_spanning_chunks(span_start, span_end, chunks):
 
 def extract_verification_json(verification_response):
     """
-    Improved JSON extraction from verification responses with better handling
+    Extract JSON decisions from verification responses with handling
     of malformed outputs.
     
     Args:
@@ -774,7 +774,7 @@ def process_verification_output(verification_output, chunk_summary, has_contradi
         }, str(verification_output)[:200]
 
 
-# Update the verification part in the verify_chunks_with_llama function
+# Sequential evidence verification with contradiction checks
 def verify_chunks_with_llama(llama_model, llama_tokenizer, query, selected_chunks, flag_instructions, chunks):
     """
     Uses Llama model to verify the retrieved chunks with batch processing.
@@ -1025,7 +1025,7 @@ def verify_chunks_with_llama(llama_model, llama_tokenizer, query, selected_chunk
                 do_sample=True
             )
             
-            # Process the verification output with improved handling
+            # Parse the verification response and attach contradiction flags
             result, verification_response = process_verification_output(
                 verification_output, chunk_summary, has_contradiction
             )

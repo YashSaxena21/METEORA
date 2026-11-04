@@ -2,14 +2,14 @@ from __future__ import annotations
 
 import hashlib
 import re
+from inspect import signature
 from typing import Any, Callable, Iterable, Optional, Protocol, Sequence, Union
 
 import numpy as np
 
 
 class Encoder(Protocol):
-    def encode(self, texts: Sequence[str], **kwargs: Any) -> Any:
-        ...
+    def encode(self, texts: Sequence[str], **kwargs: Any) -> Any: ...
 
 
 EncoderLike = Union[Encoder, Callable[[Sequence[str]], Any]]
@@ -18,10 +18,11 @@ _TOKEN_RE = re.compile(r"[A-Za-z0-9_]+")
 
 
 class HashingEncoder:
-    """A tiny deterministic encoder for tests, demos, and dependency-free smoke runs.
+    """A deterministic word-hashing encoder for examples and tests.
 
-    For production evidence selection, use `SentenceTransformerEncoder` or pass any encoder
-    exposing an `encode(list[str])` method.
+    Uses the core NumPy dependency and downloads no weights. Matching depends on
+    shared words; for semantic embeddings, use ``SentenceTransformerEncoder``
+    or another encoder exposing an ``encode(list[str])`` method.
     """
 
     def __init__(self, n_features: int = 384, lowercase: bool = True) -> None:
@@ -46,7 +47,11 @@ class HashingEncoder:
 
 
 class SentenceTransformerEncoder:
-    """Lazy wrapper around `sentence_transformers.SentenceTransformer`."""
+    """Load a SentenceTransformer model and return normalized NumPy embeddings.
+
+    Construction loads model weights, downloading them when not already cached.
+    Install the ``sentence-transformers`` extra to use this encoder.
+    """
 
     def __init__(
         self,
@@ -64,6 +69,14 @@ class SentenceTransformerEncoder:
 
         self.model_name = model_name
         self.model = SentenceTransformer(model_name, device=device, **model_kwargs)
+        tokenizer = getattr(self.model, "tokenizer", None)
+        vocab_size = getattr(tokenizer, "vocab_size", None)
+        special_ids = getattr(tokenizer, "all_special_ids", ()) or ()
+        if isinstance(vocab_size, int) and vocab_size <= len(special_ids):
+            raise ValueError(
+                "The embedding tokenizer has no trained vocabulary. Download the complete "
+                "model with network access, or use a local directory containing its tokenizer files."
+            )
 
     def encode(self, texts: Sequence[str], **kwargs: Any) -> np.ndarray:
         options = {
@@ -81,16 +94,21 @@ def encode_texts(encoder: EncoderLike, texts: Iterable[str]) -> np.ndarray:
         return np.empty((0, 0), dtype=np.float64)
 
     if hasattr(encoder, "encode"):
+        options = {"convert_to_numpy": True, "show_progress_bar": False}
         try:
-            encoded = encoder.encode(items, convert_to_numpy=True, show_progress_bar=False)
-        except TypeError:
-            encoded = encoder.encode(items)
+            method_signature = signature(encoder.encode)
+            method_signature.bind(items, **options)
+        except (TypeError, ValueError):
+            options = {}
+        encoded = encoder.encode(items, **options)
     else:
         encoded = encoder(items)
 
     array = _to_numpy(encoded)
     if array.ndim == 1:
         array = array.reshape(1, -1)
+    if array.ndim != 2:
+        raise ValueError("Encoder must return a two-dimensional embedding array.")
     if array.shape[0] != len(items):
         raise ValueError(
             f"Encoder returned {array.shape[0]} embeddings for {len(items)} input texts."
@@ -104,9 +122,7 @@ def cosine_similarity_matrix(left: np.ndarray, right: np.ndarray) -> np.ndarray:
     if right.ndim == 1:
         right = right.reshape(1, -1)
     if left.shape[1] != right.shape[1]:
-        raise ValueError(
-            f"Embedding dimensions do not match: {left.shape[1]} vs {right.shape[1]}."
-        )
+        raise ValueError(f"Embedding dimensions do not match: {left.shape[1]} vs {right.shape[1]}.")
     return normalize_rows(left) @ normalize_rows(right).T
 
 

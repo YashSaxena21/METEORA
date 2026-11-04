@@ -2,7 +2,7 @@ import unittest
 
 import numpy as np
 
-from meteora import MeteoraSelector, statistical_elbow
+from meteora_rag import MeteoraSelector, statistical_elbow
 
 
 class StaticEncoder:

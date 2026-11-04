@@ -1,7 +1,17 @@
 include README.md
+include LICENSE
+include ATTRIBUTION.md
+include CHANGELOG.md
+include PUBLISHING.md
+include CONTRIBUTING.md
 include requirements.txt
-include requirements-experiments.txt
-recursive-include examples *.py
+recursive-include examples *.py *.json *.txt *.md
+include docs/api.md
+include docs/training.md
+include docs/colab.md
 recursive-include tests *.py
-recursive-include Images *.png
-recursive-include Experiments *.py
+recursive-include scripts *.py
+global-exclude __pycache__ *.py[cod] .DS_Store
+prune Experiments
+prune Images
+exclude requirements-experiments.txt

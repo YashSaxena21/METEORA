@@ -1,0 +1,104 @@
+[
+  {
+    "query": "Is assignment restricted?",
+    "document_chunks": [
+      {
+        "text": "Assignment requires prior written consent.",
+        "id": "assignment"
+      },
+      {
+        "text": "Invoices are due within thirty days.",
+        "id": "payment"
+      },
+      {
+        "text": "The agreement is governed by New York law.",
+        "id": "governing-law"
+      },
+      {
+        "text": "Confidential information must not be disclosed.",
+        "id": "confidentiality"
+      },
+      {
+        "text": "Either party may terminate for material breach.",
+        "id": "termination"
+      }
+    ],
+    "correct_chunks": [
+      0
+    ],
+    "effective_rationales": [
+      "Look for assignment restrictions and consent requirements."
+    ],
+    "ineffective_rationales": [
+      "Look for invoice payment dates."
+    ]
+  },
+  {
+    "query": "When are invoices due?",
+    "document_chunks": [
+      {
+        "text": "Assignment requires prior written consent.",
+        "id": "assignment"
+      },
+      {
+        "text": "Invoices are due within thirty days.",
+        "id": "payment"
+      },
+      {
+        "text": "The agreement is governed by New York law.",
+        "id": "governing-law"
+      },
+      {
+        "text": "Confidential information must not be disclosed.",
+        "id": "confidentiality"
+      },
+      {
+        "text": "Either party may terminate for material breach.",
+        "id": "termination"
+      }
+    ],
+    "correct_chunks": [
+      1
+    ],
+    "effective_rationales": [
+      "Find the invoice payment deadline."
+    ],
+    "ineffective_rationales": [
+      "Find the jurisdiction governing the contract."
+    ]
+  },
+  {
+    "query": "Can either party terminate for a breach?",
+    "document_chunks": [
+      {
+        "text": "Assignment requires prior written consent.",
+        "id": "assignment"
+      },
+      {
+        "text": "Invoices are due within thirty days.",
+        "id": "payment"
+      },
+      {
+        "text": "The agreement is governed by New York law.",
+        "id": "governing-law"
+      },
+      {
+        "text": "Confidential information must not be disclosed.",
+        "id": "confidentiality"
+      },
+      {
+        "text": "Either party may terminate for material breach.",
+        "id": "termination"
+      }
+    ],
+    "correct_chunks": [
+      4
+    ],
+    "effective_rationales": [
+      "Look for termination rights triggered by material breach."
+    ],
+    "ineffective_rationales": [
+      "Look for restrictions on disclosure of confidential information."
+    ]
+  }
+]

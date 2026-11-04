@@ -1,0 +1,10 @@
+[
+  {
+    "query": "Is assignment restricted?",
+    "response": "<rationale_1>[Assignment] Search for assignment and consent requirements. Flag Instructions: Reject passages that reverse the consent requirement.</rationale_1>"
+  },
+  {
+    "query": "How long do confidentiality obligations last?",
+    "response": "<rationale_1>[Confidentiality duration] Search for the duration of confidentiality duties after termination. Flag Instructions: Reject passages that contradict the stated confidentiality period.</rationale_1>"
+  }
+]

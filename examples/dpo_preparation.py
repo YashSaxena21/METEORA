@@ -1,35 +1,45 @@
-from meteora import DPODataConfig, build_dpo_preference_records, split_dpo_records
+"""Prepare preference splits from the bundled synthetic annotations."""
 
+import argparse
+import json
+from pathlib import Path
 
-examples = [
-    {
-        "query": "Is assignment restricted?",
-        "document_chunks": [
-            {"text": "Invoices are due within thirty days."},
-            {"text": "The agreement may not be assigned without prior written consent."},
-        ],
-        "correct_chunks": [1],
-        "effective_rationales": [
-            "Look for clauses that restrict assignment or transfer without consent."
-        ],
-        "ineffective_rationales": [
-            "Look for payment timing and invoice due dates."
-        ],
-    }
-]
-
-sample_shots = [
-    {
-        "query": "Can the agreement be assigned without consent?",
-        "response": "<rationale_1>[Assignment] Search for assignment, transfer, and consent restrictions.</rationale_1>",
-    }
-]
-
-records = build_dpo_preference_records(
-    examples,
-    config=DPODataConfig(sample_shots=sample_shots, domain="commercial contracts"),
+from meteora_rag import (
+    DPODataConfig,
+    build_dpo_preference_records,
+    load_preference_examples,
+    load_sample_shots,
+    split_dpo_records,
+    write_preference_jsonl,
 )
-splits = split_dpo_records(records)
 
-print(records[0].to_dict())
-print({name: len(split) for name, split in splits.items()})
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--output-dir", type=Path, default=Path("outputs/dpo"))
+    args = parser.parse_args()
+    data = Path(__file__).with_name("data")
+    records = build_dpo_preference_records(
+        load_preference_examples(data / "preference_examples.json"),
+        config=DPODataConfig(
+            sample_shots=load_sample_shots(data / "sample_shots.json"),
+            domain="commercial contracts",
+            skip_missing=False,
+        ),
+    )
+    splits = split_dpo_records(records)
+    for name, rows in splits.items():
+        write_preference_jsonl(rows, args.output_dir / f"{name}.jsonl")
+    print(
+        json.dumps(
+            {
+                "output_dir": str(args.output_dir),
+                **{name: len(rows) for name, rows in splits.items()},
+            },
+            indent=2,
+        )
+    )
+
+
+if __name__ == "__main__":
+    main()
